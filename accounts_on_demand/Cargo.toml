@@ -1,0 +1,20 @@
+[package]
+name = "lite-accounts-on-demand"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+lite-account-manager-common = { workspace = true }
+lite-account-storage = { workspace = true }
+
+solana-sdk = {workspace = true}
+solana-client = {workspace = true}
+
+async-trait = { workspace = true }
+itertools = { workspace = true }
+futures = { workspace = true }
+lazy_static = {workspace = true}
+prometheus = {workspace = true}
+solana-account-decoder = {workspace = true}
+tokio = {workspace = true, features = ["full"]}
+log = {workspace = true}

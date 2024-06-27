@@ -1,0 +1,20 @@
+[package]
+name = "lite-account-storage"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+solana-sdk = {workspace = true}
+lite-account-manager-common = {workspace = true}
+dashmap = {workspace = true}
+async-trait = { workspace = true }
+itertools = { workspace = true }
+futures = { workspace = true }
+tokio = {workspace = true, features = ["full"]}
+lazy_static = {workspace = true}
+prometheus = {workspace = true}
+log = {workspace = true}
+
+[dev-dependencies]
+rand = "0.8.5"
+rand_chacha = "0.3.1"
