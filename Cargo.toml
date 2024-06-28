@@ -5,6 +5,7 @@ members = [
     "account_storage",
     "accounts_on_demand",
     "common",
+    "token_account_storage",
 ]
 
 [workspace.package]
@@ -39,6 +40,11 @@ async-trait = "0.1.68"
 base64 = "0.21.0"
 futures = "0.3.28"
 
+# spl token
+spl-token = "~4.0.0"
+spl-token-2022 = "~3.0.0"
+
 lite-account-manager-common = {path = "common", version="0.1.0"}
 lite-account-storage = {path = "account_storage", version="0.1.0"}
 lite-accounts-on-demand = {path = "accounts_on_demand", version="0.1.0"}
+lite-token-account-storage = {path = "token_account_storage", version="0.1.0"}

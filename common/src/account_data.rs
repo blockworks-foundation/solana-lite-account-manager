@@ -62,6 +62,8 @@ pub struct Account {
     pub executable: bool,
     /// the epoch at which this account will next owe rent
     pub rent_epoch: u64,
+    //uncompressed data length
+    pub data_length: u64,
 }
 
 impl Account {
@@ -69,6 +71,7 @@ impl Account {
         account: SolanaAccount,
         compression_method: CompressionMethod,
     ) -> Self {
+        let data_length = account.data.len() as u64;
         let data = match compression_method {
             CompressionMethod::None => Data::Uncompressed(account.data),
             CompressionMethod::Lz4(level) => {
@@ -93,6 +96,7 @@ impl Account {
             owner: account.owner,
             executable: account.executable,
             rent_epoch: account.rent_epoch,
+            data_length,
         }
     }
 
