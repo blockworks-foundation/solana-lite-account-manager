@@ -6,14 +6,23 @@ use crate::account_types::{
 use anyhow::bail;
 use dashmap::DashMap;
 use itertools::Itertools;
-use lite_account_manager_common::account_data::{Account, AccountData};
-use solana_sdk::{program_option::COption, program_pack::Pack, pubkey::Pubkey};
+use lite_account_manager_common::{
+    account_data::{Account, AccountData},
+    account_filter::{AccountFilterType, MemcmpFilter, MemcmpFilterData},
+};
+use solana_sdk::{
+    program_option::COption,
+    program_pack::Pack,
+    pubkey::{Pubkey, PUBKEY_BYTES},
+};
 use spl_token::instruction::MAX_SIGNERS;
 
+#[derive(Clone)]
 pub enum TokenProgramAccountType {
     TokenAccount(TokenAccount),
     Mint(MintAccount),
     MultiSig(MultiSig, Pubkey),
+    Deleted(Pubkey),
 }
 
 pub fn get_or_create_mint_index(
@@ -36,6 +45,14 @@ pub fn get_token_program_account_type(
     mint_index_by_pubkey: &Arc<DashMap<Pubkey, u64>>,
     mint_index_count: &Arc<AtomicU64>,
 ) -> anyhow::Result<TokenProgramAccountType> {
+    if account_data.account.lamports == 0
+        || (account_data.account.owner != spl_token::id()
+            && account_data.account.owner != spl_token_2022::id())
+    {
+        // account owner changed or is deleted
+        return Ok(TokenProgramAccountType::Deleted(account_data.pubkey));
+    }
+
     if account_data.account.owner == spl_token_2022::ID {
         let data = account_data.account.data.data();
         let (type_account, additional_data) = if account_data.account.data_length == 82 {
@@ -428,5 +445,70 @@ pub fn token_program_account_to_solana_account(
         TokenProgramAccountType::MultiSig(multisig, pubkey) => {
             token_multisig_to_solana_account(multisig, *pubkey, updated_slot, write_version)
         }
+        TokenProgramAccountType::Deleted(_) => unreachable!(),
+    }
+}
+
+pub fn get_spl_token_owner_mint_filter(
+    program_id: &Pubkey,
+    filters: &[AccountFilterType],
+) -> (Option<Pubkey>, Option<Pubkey>) {
+    let mut data_size_filter: Option<u64> = None;
+    let mut memcmp_filter: Option<&[u8]> = None;
+    let mut owner_key: Option<Pubkey> = None;
+    let mut incorrect_owner_len: Option<usize> = None;
+    let mut incorrect_mint_len: Option<usize> = None;
+    let mut mint: Option<Pubkey> = None;
+    let account_packed_len = spl_token_2022::state::Account::get_packed_len() as u64;
+    const SPL_TOKEN_ACCOUNT_OWNER_OFFSET: u64 = 32;
+    pub const SPL_TOKEN_ACCOUNT_MINT_OFFSET: u64 = 0;
+    const ACCOUNTTYPE_ACCOUNT: u8 = 2;
+    for filter in filters {
+        match filter {
+            AccountFilterType::Datasize(size) => data_size_filter = Some(*size),
+            AccountFilterType::Memcmp(MemcmpFilter {
+                offset,
+                data: MemcmpFilterData::Bytes(bytes),
+                ..
+            }) => {
+                if *offset == account_packed_len && *program_id == spl_token_2022::id() {
+                    memcmp_filter = Some(bytes)
+                };
+                if *offset == SPL_TOKEN_ACCOUNT_OWNER_OFFSET {
+                    if bytes.len() == PUBKEY_BYTES {
+                        owner_key = Pubkey::try_from(&bytes[..]).ok();
+                    } else {
+                        incorrect_owner_len = Some(bytes.len());
+                    }
+                }
+                if *offset == SPL_TOKEN_ACCOUNT_MINT_OFFSET {
+                    if bytes.len() == PUBKEY_BYTES {
+                        mint = Pubkey::try_from(&bytes[..]).ok();
+                    } else {
+                        incorrect_mint_len = Some(bytes.len());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    if data_size_filter == Some(account_packed_len as u64)
+        || memcmp_filter == Some(&[ACCOUNTTYPE_ACCOUNT])
+    {
+        if let Some(incorrect_owner_len) = incorrect_owner_len {
+            log::error!(
+                "Incorrect num bytes ({:?}) provided for owner in get_spl_token_owner_mint_filter",
+                incorrect_owner_len
+            );
+        }
+        if let Some(incorrect_mint_len) = incorrect_mint_len {
+            log::error!(
+                "Incorrect num bytes ({:?}) provided for mint in get_spl_token_owner_mint_filter",
+                incorrect_mint_len
+            );
+        }
+        (owner_key, mint)
+    } else {
+        (None, None)
     }
 }

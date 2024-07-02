@@ -12,6 +12,10 @@ pub enum AccountLoadingError {
     OperationTimeOut,
     ErrorCreatingSnapshot,
     ErrorSubscribingAccount,
+    TokenAccountsSizeNotFound,
+    TokenAccountsCannotUseThisFilter,
+    WrongIndex,
+    ShouldContainAnAccountFilter,
 }
 
 #[async_trait]

@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap, VecDeque},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
@@ -8,6 +8,7 @@ use std::{
 
 use async_trait::async_trait;
 use dashmap::DashMap;
+use itertools::Itertools;
 use lite_account_manager_common::{
     account_data::AccountData,
     account_filter::AccountFilterType,
@@ -21,11 +22,14 @@ use tokio::sync::RwLock;
 use crate::{
     account_types::{MintData, MultiSig, TokenAccount},
     token_program_utils::{
-        get_token_program_account_type, token_program_account_to_solana_account,
+        get_spl_token_owner_mint_filter, get_token_program_account_type,
+        token_account_to_solana_account, token_mint_to_solana_account,
+        token_multisig_to_solana_account, token_program_account_to_solana_account,
         TokenProgramAccountType,
     },
 };
 
+#[derive(Clone)]
 struct ProcessedAccount {
     pub processed_account: TokenProgramAccountType,
     pub write_version: u64,
@@ -118,27 +122,134 @@ impl ProcessedAccountStore {
 
     pub async fn get_processed_for_slot(
         &self,
-        slot: u64,
+        slot_info: SlotInfo,
         mints_by_index: &Arc<DashMap<u64, MintData>>,
     ) -> Vec<AccountData> {
         let lk = self.processed_slot_accounts.read().await;
-        match lk.get(&slot) {
+        match lk.get(&slot_info.slot) {
             Some(acc) => acc
                 .processed_accounts
                 .iter()
                 .map(|(_, account)| {
                     token_program_account_to_solana_account(
                         &account.processed_account,
-                        slot,
+                        slot_info.slot,
                         account.write_version,
                         mints_by_index,
                     )
                 })
                 .collect(),
             None => {
-                log::error!("confirmed slot not found in cache : {}", slot);
+                log::error!("confirmed slot not found in cache : {}", slot_info.slot);
+                drop(lk);
+                self.update_slot_info(slot_info).await;
                 vec![]
             }
+        }
+    }
+
+    // returns list of accounts that are finalized
+    pub async fn finalize(&self, slot: u64) -> Vec<ProcessedAccount> {
+        let mut map_of_accounts: HashMap<Pubkey, ProcessedAccount> = HashMap::new();
+        let mut lk = self.processed_slot_accounts.write().await;
+        let mut process_slot = Some(slot);
+        while let Some(current_slot) = process_slot {
+            match lk.entry(current_slot) {
+                std::collections::btree_map::Entry::Occupied(mut occ) => {
+                    let value = occ.get_mut();
+                    for (pk, acc) in value.processed_accounts.drain() {
+                        // as we are going from most recent slot to least recent slot
+                        // if the key already exists then we do not insert in the map
+                        match map_of_accounts.entry(pk) {
+                            std::collections::hash_map::Entry::Vacant(vac) => {
+                                vac.insert(acc);
+                            }
+                            std::collections::hash_map::Entry::Occupied(_) => {
+                                // already present
+                                continue;
+                            }
+                        }
+                    }
+                    process_slot = value.slot_parent;
+                    occ.remove();
+                }
+                std::collections::btree_map::Entry::Vacant(_) => {
+                    break;
+                }
+            }
+        }
+
+        // remove processed nodes less than finalized slot
+        while let Some(first_entry) = lk.first_entry() {
+            if *first_entry.key() <= slot {
+                first_entry.remove();
+            } else {
+                break;
+            }
+        }
+        let mut return_vec = vec![];
+        return_vec.reserve(map_of_accounts.len());
+        for (_, acc) in map_of_accounts.drain() {
+            return_vec.push(acc);
+        }
+        return_vec
+    }
+
+    pub async fn get_confirmed_account(
+        &self,
+        account_pk: Pubkey,
+        confirmed_slot: Slot,
+    ) -> Option<ProcessedAccount> {
+        let mut process_slot = Some(confirmed_slot);
+        let lk = self.processed_slot_accounts.read().await;
+        while let Some(current_slot) = process_slot {
+            match lk.get(&current_slot) {
+                Some(processed_accounts) => {
+                    match processed_accounts.processed_accounts.get(&account_pk) {
+                        Some(acc) => {
+                            return Some(acc.clone());
+                        }
+                        None => {
+                            process_slot = processed_accounts.slot_parent;
+                        }
+                    }
+                }
+                None => {
+                    break;
+                }
+            }
+        }
+        None
+    }
+
+    pub async fn get_account(
+        &self,
+        account_pk: Pubkey,
+        commitment: Commitment,
+        confirmed_slot: Slot,
+    ) -> Option<ProcessedAccount> {
+        match commitment {
+            Commitment::Processed => {
+                let lk = self.processed_slot_accounts.read().await;
+                // iterate backwards on all the processed slots until we reach confirmed slot
+                for (slot, processed_account_slots) in lk.iter().rev() {
+                    if *slot > confirmed_slot {
+                        if let Some(processed_account) =
+                            processed_account_slots.processed_accounts.get(&account_pk)
+                        {
+                            return Some(processed_account.clone());
+                        } else {
+                            continue;
+                        }
+                    } else {
+                        drop(lk);
+                        return self.get_confirmed_account(account_pk, confirmed_slot).await;
+                    }
+                }
+                None
+            }
+            Commitment::Confirmed => self.get_confirmed_account(account_pk, confirmed_slot).await,
+            Commitment::Finalized => unreachable!(),
         }
     }
 }
@@ -153,6 +264,7 @@ pub struct InMemoryTokenStorage {
     token_accounts: Arc<RwLock<VecDeque<TokenAccount>>>,
     processed_storage: ProcessedAccountStore,
     confirmed_slot: Arc<AtomicU64>,
+    finalized_slot: Arc<AtomicU64>,
     mint_counter: Arc<AtomicU64>,
 }
 
@@ -168,6 +280,7 @@ impl InMemoryTokenStorage {
             token_accounts: Arc::new(RwLock::new(VecDeque::new())),
             processed_storage: ProcessedAccountStore::default(),
             confirmed_slot: Arc::new(AtomicU64::new(0)),
+            finalized_slot: Arc::new(AtomicU64::new(0)),
             mint_counter: Arc::new(AtomicU64::new(0)),
         }
     }
@@ -241,6 +354,21 @@ impl InMemoryTokenStorage {
             TokenProgramAccountType::MultiSig(multisig_data, pubkey) => {
                 self.multisigs.insert(pubkey, multisig_data);
             }
+            TokenProgramAccountType::Deleted(account_pk) => {
+                if let Some((_, index)) = self.mints_index_by_pubkey.remove(&account_pk) {
+                    self.mints_by_index.remove(&index);
+                    self.accounts_index_by_mint.remove(&index);
+                } else if self.mints_index_by_pubkey.remove(&account_pk).is_some() {
+                    // do nothing multisig account is removed
+                } else if let Some((_, index)) = self.account_index_by_pubkey.remove(&account_pk) {
+                    let mut lk = self.token_accounts.write().await;
+                    if let Some(token_account) = lk.get_mut(index as usize) {
+                        token_account.lamports = 0;
+                        token_account.mint = 0;
+                        token_account.owner = Pubkey::default();
+                    }
+                }
+            }
         }
         true
     }
@@ -261,6 +389,44 @@ impl InMemoryTokenStorage {
             false
         }
     }
+
+    pub async fn get_account(&self, account_pk: Pubkey) -> Option<AccountData> {
+        if let Some(multisig) = self.multisigs.get(&account_pk) {
+            return Some(token_multisig_to_solana_account(
+                &multisig,
+                account_pk,
+                self.finalized_slot.load(Ordering::Relaxed),
+                0,
+            ));
+        }
+
+        if let Some(mint_index) = self.mints_index_by_pubkey.get(&account_pk) {
+            let mint_data = self.mints_by_index.get(&mint_index).unwrap();
+            if let Some(mint_account) = &mint_data.mint_account {
+                return Some(token_mint_to_solana_account(
+                    &mint_account,
+                    self.finalized_slot.load(Ordering::Relaxed),
+                    0,
+                ));
+            } else {
+                log::error!("mint data not found");
+                return None;
+            }
+        }
+
+        if let Some(ite) = self.account_index_by_pubkey.get(&account_pk) {
+            let token_account_index = *ite as usize;
+            let lk = self.token_accounts.read().await;
+            let token_account = lk.get(token_account_index).unwrap();
+            return Some(token_account_to_solana_account(
+                token_account,
+                self.finalized_slot.load(Ordering::Relaxed),
+                0,
+                &self.mints_by_index,
+            ));
+        }
+        None
+    }
 }
 
 #[async_trait]
@@ -269,6 +435,7 @@ impl AccountStorageInterface for InMemoryTokenStorage {
         if !self.is_token_program_account(&account_data) {
             return false;
         }
+
         let token_program_account = match get_token_program_account_type(
             &account_data,
             &self.mints_index_by_pubkey,
@@ -319,16 +486,58 @@ impl AccountStorageInterface for InMemoryTokenStorage {
         account_pk: Pubkey,
         commitment: Commitment,
     ) -> Result<Option<AccountData>, AccountLoadingError> {
-        todo!()
+        match commitment {
+            Commitment::Confirmed | Commitment::Processed => {
+                match self
+                    .processed_storage
+                    .get_account(
+                        account_pk,
+                        commitment,
+                        self.confirmed_slot.load(Ordering::Relaxed),
+                    )
+                    .await
+                {
+                    Some(processed_account) => Ok(Some(token_program_account_to_solana_account(
+                        &processed_account.processed_account,
+                        self.confirmed_slot.load(Ordering::Relaxed),
+                        0,
+                        &self.mints_by_index,
+                    ))),
+                    None => Ok(self.get_account(account_pk).await),
+                }
+            }
+            Commitment::Finalized => Ok(self.get_account(account_pk).await),
+        }
     }
 
     async fn get_program_accounts(
         &self,
         program_pubkey: Pubkey,
-        account_filter: Option<Vec<AccountFilterType>>,
-        commitment: Commitment,
+        account_filters: Option<Vec<AccountFilterType>>,
+        _commitment: Commitment,
     ) -> Result<Vec<AccountData>, AccountLoadingError> {
-        todo!()
+        if program_pubkey != spl_token::id() && program_pubkey != spl_token_2022::id() {
+            return Err(AccountLoadingError::WrongIndex);
+        }
+
+        if let Some(account_filters) = account_filters {
+            let (owner, mint) = get_spl_token_owner_mint_filter(&program_pubkey, &account_filters);
+            if let Some(owner) = owner {
+                match self.account_by_owner_pubkey.get(&owner) {
+                    Some(token_acc_indexes) => todo!(),
+                    None => Ok(vec![]),
+                }
+            } else if let Some(mint) = mint {
+                match self.mints_index_by_pubkey.get(&mint) {
+                    Some(_) => todo!(),
+                    None => Ok(vec![]),
+                }
+            } else {
+                Err(AccountLoadingError::ShouldContainAnAccountFilter)
+            }
+        } else {
+            Err(AccountLoadingError::ShouldContainAnAccountFilter)
+        }
     }
 
     async fn process_slot_data(
@@ -344,12 +553,29 @@ impl AccountStorageInterface for InMemoryTokenStorage {
             Commitment::Confirmed => {
                 self.confirmed_slot.store(slot_info.slot, Ordering::Relaxed);
                 self.processed_storage
-                    .get_processed_for_slot(slot_info.slot, &self.mints_by_index)
+                    .get_processed_for_slot(slot_info, &self.mints_by_index)
                     .await
             }
             Commitment::Finalized => {
+                self.finalized_slot.store(slot_info.slot, Ordering::Relaxed);
                 // move data from processed storage to main storage
-                todo!()
+                let finalized_accounts = self.processed_storage.finalize(slot_info.slot).await;
+                let accounts_notifications = finalized_accounts
+                    .iter()
+                    .map(|acc| {
+                        token_program_account_to_solana_account(
+                            &acc.processed_account,
+                            slot_info.slot,
+                            acc.write_version,
+                            &self.mints_by_index,
+                        )
+                    })
+                    .collect_vec();
+                for finalized_account in finalized_accounts {
+                    self.add_account_finalized(finalized_account.processed_account)
+                        .await;
+                }
+                accounts_notifications
             }
         }
     }
