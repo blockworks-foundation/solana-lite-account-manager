@@ -9,6 +9,7 @@ use lite_account_manager_common::{
     account_filters_interface::AccountFiltersStoreInterface,
     account_store_interface::{AccountLoadingError, AccountStorageInterface},
     commitment::Commitment,
+    slot_info::SlotInfo,
 };
 use prometheus::{opts, register_int_gauge, IntGauge};
 use solana_sdk::{pubkey::Pubkey, slot_history::Slot};
@@ -271,7 +272,12 @@ impl AccountStorageInterface for InmemoryAccountStore {
         }
     }
 
-    async fn process_slot_data(&self, slot: Slot, commitment: Commitment) -> Vec<AccountData> {
+    async fn process_slot_data(
+        &self,
+        slot_info: SlotInfo,
+        commitment: Commitment,
+    ) -> Vec<AccountData> {
+        let slot = slot_info.slot;
         let writable_accounts = {
             let mut lk = self.slots_status.lock().await;
             // remove old slot status if finalized
@@ -373,6 +379,7 @@ mod tests {
         account_store_interface::{AccountLoadingError, AccountStorageInterface},
         commitment::Commitment,
         simple_filter_store::SimpleFilterStore,
+        slot_info::SlotInfo,
     };
     use rand::{rngs::ThreadRng, Rng};
     use solana_sdk::{account::Account as SolanaAccount, pubkey::Pubkey, slot_history::Slot};
@@ -420,6 +427,14 @@ mod tests {
         let mut simple_store = SimpleFilterStore::default();
         simple_store.add_account_filters(&account_filters);
         Arc::new(simple_store)
+    }
+
+    pub fn new_slot_info(slot: u64) -> SlotInfo {
+        SlotInfo {
+            slot: slot,
+            parent: slot.saturating_sub(1),
+            root: 0,
+        }
     }
 
     #[tokio::test]
@@ -507,7 +522,9 @@ mod tests {
             Ok(Some(account_data_0.clone()))
         );
 
-        store.process_slot_data(1, Commitment::Confirmed).await;
+        store
+            .process_slot_data(new_slot_info(1), Commitment::Confirmed)
+            .await;
 
         assert_eq!(
             store.get_account(pk1, Commitment::Processed).await,
@@ -522,7 +539,9 @@ mod tests {
             Ok(Some(account_data_0.clone()))
         );
 
-        store.process_slot_data(2, Commitment::Confirmed).await;
+        store
+            .process_slot_data(new_slot_info(2), Commitment::Confirmed)
+            .await;
 
         assert_eq!(
             store.get_account(pk1, Commitment::Processed).await,
@@ -537,7 +556,9 @@ mod tests {
             Ok(Some(account_data_0.clone()))
         );
 
-        store.process_slot_data(1, Commitment::Finalized).await;
+        store
+            .process_slot_data(new_slot_info(1), Commitment::Finalized)
+            .await;
 
         assert_eq!(
             store.get_account(pk1, Commitment::Processed).await,
@@ -654,7 +675,9 @@ mod tests {
                 .len(),
             12
         );
-        store.process_slot_data(11, Commitment::Finalized).await;
+        store
+            .process_slot_data(new_slot_info(11), Commitment::Finalized)
+            .await;
         assert_eq!(
             store
                 .account_store
@@ -671,7 +694,9 @@ mod tests {
         );
 
         // check finalizing previous commitment does not affect
-        store.process_slot_data(8, Commitment::Finalized).await;
+        store
+            .process_slot_data(new_slot_info(8), Commitment::Finalized)
+            .await;
 
         assert_eq!(
             store.get_account(pk1, Commitment::Finalized).await,
@@ -791,7 +816,9 @@ mod tests {
             .await;
         assert!(acc_prgram_3.is_err());
 
-        store.process_slot_data(1, Commitment::Finalized).await;
+        store
+            .process_slot_data(new_slot_info(1), Commitment::Finalized)
+            .await;
 
         let acc_prgram_1 = store
             .get_program_accounts(prog_1, None, Commitment::Finalized)
@@ -810,7 +837,9 @@ mod tests {
         store
             .update_account(account_finalized.clone(), Commitment::Finalized)
             .await;
-        store.process_slot_data(2, Commitment::Finalized).await;
+        store
+            .process_slot_data(new_slot_info(2), Commitment::Finalized)
+            .await;
 
         let account_confirmed = create_random_account(&mut rng, 3, pk, prog_3);
         store
@@ -844,8 +873,12 @@ mod tests {
 
         assert_eq!(f, Ok(vec![account_finalized.clone()]));
 
-        store.process_slot_data(3, Commitment::Finalized).await;
-        store.process_slot_data(4, Commitment::Confirmed).await;
+        store
+            .process_slot_data(new_slot_info(3), Commitment::Finalized)
+            .await;
+        store
+            .process_slot_data(new_slot_info(4), Commitment::Confirmed)
+            .await;
 
         let f = store
             .get_program_accounts(prog_3, None, Commitment::Finalized)
@@ -863,7 +896,9 @@ mod tests {
         assert_eq!(p_3, Ok(vec![]));
         assert_eq!(p_4, Ok(vec![account_processed.clone()]));
 
-        store.process_slot_data(4, Commitment::Finalized).await;
+        store
+            .process_slot_data(new_slot_info(4), Commitment::Finalized)
+            .await;
         let p_3 = store
             .get_program_accounts(prog_3, None, Commitment::Finalized)
             .await;
@@ -933,7 +968,9 @@ mod tests {
         );
 
         // confirming slot 2
-        let updates = store.process_slot_data(2, Commitment::Confirmed).await;
+        let updates = store
+            .process_slot_data(new_slot_info(2), Commitment::Confirmed)
+            .await;
         assert_eq!(updates, vec![account_data_slot_2.clone()]);
         assert_eq!(
             store.get_account(pk1, Commitment::Processed).await,
@@ -967,7 +1004,9 @@ mod tests {
         );
 
         // making slot 3 finalized
-        let updates = store.process_slot_data(3, Commitment::Finalized).await;
+        let updates = store
+            .process_slot_data(new_slot_info(3), Commitment::Finalized)
+            .await;
         assert_eq!(updates, vec![account_data_slot_3.clone()]);
         assert_eq!(
             store.get_account(pk1, Commitment::Processed).await,
@@ -983,7 +1022,9 @@ mod tests {
         );
 
         // making slot 2 finalized
-        let updates = store.process_slot_data(2, Commitment::Finalized).await;
+        let updates = store
+            .process_slot_data(new_slot_info(2), Commitment::Finalized)
+            .await;
         assert!(updates.is_empty());
         assert_eq!(
             store.get_account(pk1, Commitment::Processed).await,
@@ -1091,7 +1132,9 @@ mod tests {
         );
 
         // with finalized commitment all the last account version is taken into account
-        store.process_slot_data(1, Commitment::Finalized).await;
+        store
+            .process_slot_data(new_slot_info(1), Commitment::Finalized)
+            .await;
         assert_eq!(
             store.get_account(pk1, Commitment::Processed).await,
             Ok(Some(account_data_11.clone()))
@@ -1255,7 +1298,9 @@ mod tests {
             Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
         );
 
-        store.process_slot_data(1, Commitment::Confirmed).await;
+        store
+            .process_slot_data(new_slot_info(1), Commitment::Confirmed)
+            .await;
         // next slots/ change owner for account1 and account 2
         let account_1_slot2 = create_random_account(&mut rng, 2, pk1, program_2);
         let account_2_slot2 = create_random_account(&mut rng, 2, pk2, program_1);
@@ -1332,8 +1377,12 @@ mod tests {
             Ok(vec![])
         );
 
-        store.process_slot_data(1, Commitment::Finalized).await;
-        store.process_slot_data(2, Commitment::Confirmed).await;
+        store
+            .process_slot_data(new_slot_info(1), Commitment::Finalized)
+            .await;
+        store
+            .process_slot_data(new_slot_info(2), Commitment::Confirmed)
+            .await;
         // next slots/ change owner for account1 and account 2
         assert_eq!(
             store.get_account(pk1, Commitment::Finalized).await.unwrap(),
@@ -1402,7 +1451,9 @@ mod tests {
             vec![account_2.clone()]
         );
 
-        store.process_slot_data(2, Commitment::Finalized).await;
+        store
+            .process_slot_data(new_slot_info(2), Commitment::Finalized)
+            .await;
         assert_eq!(
             store.get_account(pk1, Commitment::Finalized).await.unwrap(),
             Some(account_1_slot2.clone())
@@ -1581,7 +1632,9 @@ mod tests {
             Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
         );
 
-        store.process_slot_data(5, Commitment::Confirmed).await;
+        store
+            .process_slot_data(new_slot_info(5), Commitment::Confirmed)
+            .await;
         // next slots/ change owner for account1 and account 2
         assert_eq!(
             store.get_account(pk1, Commitment::Processed).await.unwrap(),
@@ -1681,7 +1734,9 @@ mod tests {
         );
 
         // accounts deleted as they do not satisfy filter criterias
-        store.process_slot_data(5, Commitment::Finalized).await;
+        store
+            .process_slot_data(new_slot_info(5), Commitment::Finalized)
+            .await;
         assert_eq!(
             store.get_account(pk1, Commitment::Processed).await.unwrap(),
             None
@@ -1883,7 +1938,9 @@ mod tests {
             Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
         );
 
-        store.process_slot_data(6, Commitment::Confirmed).await;
+        store
+            .process_slot_data(new_slot_info(6), Commitment::Confirmed)
+            .await;
         assert_eq!(
             store.get_account(pk1, Commitment::Processed).await.unwrap(),
             None
@@ -1987,7 +2044,9 @@ mod tests {
             Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
         );
 
-        store.process_slot_data(6, Commitment::Finalized).await;
+        store
+            .process_slot_data(new_slot_info(6), Commitment::Finalized)
+            .await;
         assert_eq!(
             store.get_account(pk1, Commitment::Processed).await.unwrap(),
             None
@@ -2232,7 +2291,9 @@ mod tests {
             vec![account_1.clone()]
         );
 
-        let updated = store.process_slot_data(2, Commitment::Confirmed).await;
+        let updated = store
+            .process_slot_data(new_slot_info(2), Commitment::Confirmed)
+            .await;
         assert_eq!(updated, vec![account_1_3.clone()]);
 
         assert_eq!(
@@ -2282,7 +2343,9 @@ mod tests {
             vec![account_1.clone()]
         );
 
-        let updated = store.process_slot_data(2, Commitment::Finalized).await;
+        let updated = store
+            .process_slot_data(new_slot_info(2), Commitment::Finalized)
+            .await;
         assert_eq!(updated, vec![account_1_3]);
 
         assert_eq!(

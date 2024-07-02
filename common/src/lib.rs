@@ -6,3 +6,4 @@ pub mod accounts_source_interface;
 pub mod commitment;
 pub mod mutable_filter_store;
 pub mod simple_filter_store;
+pub mod slot_info;

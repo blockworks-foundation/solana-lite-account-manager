@@ -21,6 +21,7 @@ solana-sdk = "~1.18.15"
 solana-rpc-client = "~1.18.15"
 solana-account-decoder = "~1.18.15"
 solana-client = "~1.18.15"
+solana-program = "~1.18.15"
 
 dashmap = "5.4.0"
 serde = { version = "1.0.160", features = ["derive"] }

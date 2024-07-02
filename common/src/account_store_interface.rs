@@ -1,9 +1,9 @@
 use crate::account_data::AccountData;
 use crate::account_filter::AccountFilterType;
 use crate::commitment::Commitment;
+use crate::slot_info::SlotInfo;
 use async_trait::async_trait;
 use solana_sdk::pubkey::Pubkey;
-use solana_sdk::slot_history::Slot;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum AccountLoadingError {
@@ -34,5 +34,5 @@ pub trait AccountStorageInterface: Send + Sync {
         commitment: Commitment,
     ) -> Result<Vec<AccountData>, AccountLoadingError>;
 
-    async fn process_slot_data(&self, slot: Slot, commitment: Commitment) -> Vec<AccountData>;
+    async fn process_slot_data(&self, slot: SlotInfo, commitment: Commitment) -> Vec<AccountData>;
 }

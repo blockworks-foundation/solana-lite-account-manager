@@ -13,9 +13,10 @@ use lite_account_manager_common::{
     accounts_source_interface::AccountsSourceInterface,
     commitment::Commitment,
     mutable_filter_store::MutableFilterStore,
+    slot_info::SlotInfo,
 };
 use prometheus::{opts, register_int_gauge, IntGauge};
-use solana_sdk::{clock::Slot, pubkey::Pubkey};
+use solana_sdk::pubkey::Pubkey;
 use tokio::sync::Notify;
 
 lazy_static::lazy_static! {
@@ -223,9 +224,13 @@ impl AccountStorageInterface for AccountsOnDemand {
         }
     }
 
-    async fn process_slot_data(&self, slot: Slot, commitment: Commitment) -> Vec<AccountData> {
+    async fn process_slot_data(
+        &self,
+        slot_info: SlotInfo,
+        commitment: Commitment,
+    ) -> Vec<AccountData> {
         self.accounts_storage
-            .process_slot_data(slot, commitment)
+            .process_slot_data(slot_info, commitment)
             .await
     }
 }

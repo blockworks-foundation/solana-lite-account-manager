@@ -28,12 +28,14 @@ pub struct TokenAccount {
     pub is_native: Option<u64>,
     pub close_authority: Option<Pubkey>,
     pub additional_data: Option<Vec<u8>>,
+    pub lamports: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MintAccount {
     pub program: Program,
     pub pubkey: Pubkey,
+    pub lamports: u64,
     pub supply: u64,
     pub decimals: u8,
     pub is_initialized: bool,
@@ -45,7 +47,15 @@ pub struct MintAccount {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MultiSig {
     pub program: Program,
+    pub lamports: u64,
     pub m: u8,
     pub n: u8,
+    pub is_initialized: bool,
     pub signers: Vec<Pubkey>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MintData {
+    pub pubkey: Pubkey,
+    pub mint_account: Option<MintAccount>,
 }
