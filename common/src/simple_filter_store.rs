@@ -88,7 +88,7 @@ impl SimpleFilterStore {
         self.accounts.contains(&account_pk)
     }
 
-    pub fn contains_filter(&self, account_filter: &AccountFilter) -> bool {
+    pub fn contains_filter_internal(&self, account_filter: &AccountFilter) -> bool {
         let accounts_match = account_filter
             .accounts
             .iter()
@@ -160,6 +160,10 @@ impl AccountFiltersStoreInterface for SimpleFilterStore {
     async fn satisfies(&self, account_data: &AccountData) -> bool {
         self.satisfies_filter(account_data)
     }
+
+    async fn contains_filter(&self, filter: &AccountFilter) -> bool {
+        self.contains_filter_internal(filter)
+    }
 }
 
 #[cfg(test)]
@@ -178,26 +182,26 @@ mod tests {
             program_id: Some(program_id),
             filters: None,
         });
-        assert!(simple_store.contains_filter(&AccountFilter {
+        assert!(simple_store.contains_filter_internal(&AccountFilter {
             accounts: vec![],
             program_id: Some(program_id),
             filters: None,
         }));
 
-        assert!(!simple_store.contains_filter(&AccountFilter {
+        assert!(!simple_store.contains_filter_internal(&AccountFilter {
             accounts: vec![],
             program_id: Some(Pubkey::new_unique()),
             filters: None,
         }));
 
-        assert!(simple_store.contains_filter(&AccountFilter {
+        assert!(simple_store.contains_filter_internal(&AccountFilter {
             accounts: vec![],
             program_id: Some(program_id),
             filters: Some(vec![AccountFilterType::Datasize(100)]),
         }));
 
         // contains a subfilter
-        assert!(simple_store.contains_filter(&AccountFilter {
+        assert!(simple_store.contains_filter_internal(&AccountFilter {
             accounts: vec![],
             program_id: Some(program_id),
             filters: Some(vec![
@@ -225,27 +229,27 @@ mod tests {
                 }),
             ]),
         });
-        assert!(!simple_store.contains_filter(&AccountFilter {
+        assert!(!simple_store.contains_filter_internal(&AccountFilter {
             accounts: vec![],
             program_id: Some(program_id),
             filters: None,
         }));
 
-        assert!(!simple_store.contains_filter(&AccountFilter {
+        assert!(!simple_store.contains_filter_internal(&AccountFilter {
             accounts: vec![],
             program_id: Some(Pubkey::new_unique()),
             filters: None,
         }));
 
         // it cannot detect supersets
-        assert!(!simple_store.contains_filter(&AccountFilter {
+        assert!(!simple_store.contains_filter_internal(&AccountFilter {
             accounts: vec![],
             program_id: Some(program_id),
             filters: Some(vec![AccountFilterType::Datasize(100)]),
         }));
 
         // contains a subfilter
-        assert!(simple_store.contains_filter(&AccountFilter {
+        assert!(simple_store.contains_filter_internal(&AccountFilter {
             accounts: vec![],
             program_id: Some(program_id),
             filters: Some(vec![
@@ -258,7 +262,7 @@ mod tests {
         }));
 
         // contains in different order
-        assert!(simple_store.contains_filter(&AccountFilter {
+        assert!(simple_store.contains_filter_internal(&AccountFilter {
             accounts: vec![],
             program_id: Some(program_id),
             filters: Some(vec![
@@ -271,7 +275,7 @@ mod tests {
         }));
 
         // can detect subsets
-        assert!(simple_store.contains_filter(&AccountFilter {
+        assert!(simple_store.contains_filter_internal(&AccountFilter {
             accounts: vec![],
             program_id: Some(program_id),
             filters: Some(vec![
@@ -307,27 +311,27 @@ mod tests {
                 }),
             ]),
         });
-        assert!(!simple_store.contains_filter(&AccountFilter {
+        assert!(!simple_store.contains_filter_internal(&AccountFilter {
             accounts: vec![],
             program_id: Some(program_id),
             filters: None,
         }));
 
-        assert!(!simple_store.contains_filter(&AccountFilter {
+        assert!(!simple_store.contains_filter_internal(&AccountFilter {
             accounts: vec![],
             program_id: Some(Pubkey::new_unique()),
             filters: None,
         }));
 
         // for now it cannot detect subsets
-        assert!(!simple_store.contains_filter(&AccountFilter {
+        assert!(!simple_store.contains_filter_internal(&AccountFilter {
             accounts: vec![],
             program_id: Some(program_id),
             filters: Some(vec![AccountFilterType::Datasize(100)]),
         }));
 
         // contains a subfilter
-        assert!(!simple_store.contains_filter(&AccountFilter {
+        assert!(!simple_store.contains_filter_internal(&AccountFilter {
             accounts: vec![],
             program_id: Some(program_id),
             filters: Some(vec![
@@ -339,7 +343,7 @@ mod tests {
             ]),
         }));
 
-        assert!(simple_store.contains_filter(&AccountFilter {
+        assert!(simple_store.contains_filter_internal(&AccountFilter {
             accounts: vec![],
             program_id: Some(program_id),
             filters: Some(vec![
@@ -355,7 +359,7 @@ mod tests {
             ]),
         }));
 
-        assert!(simple_store.contains_filter(&AccountFilter {
+        assert!(simple_store.contains_filter_internal(&AccountFilter {
             accounts: vec![],
             program_id: Some(program_id),
             filters: Some(vec![
@@ -371,7 +375,7 @@ mod tests {
             ]),
         }));
 
-        assert!(simple_store.contains_filter(&AccountFilter {
+        assert!(simple_store.contains_filter_internal(&AccountFilter {
             accounts: vec![],
             program_id: Some(program_id),
             filters: Some(vec![
@@ -387,7 +391,7 @@ mod tests {
             ]),
         }));
 
-        assert!(simple_store.contains_filter(&AccountFilter {
+        assert!(simple_store.contains_filter_internal(&AccountFilter {
             accounts: vec![],
             program_id: Some(program_id),
             filters: Some(vec![
@@ -404,7 +408,7 @@ mod tests {
         }));
 
         // can detect subsets
-        assert!(simple_store.contains_filter(&AccountFilter {
+        assert!(simple_store.contains_filter_internal(&AccountFilter {
             accounts: vec![],
             program_id: Some(program_id),
             filters: Some(vec![

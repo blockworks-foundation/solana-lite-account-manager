@@ -9,6 +9,7 @@ use futures::lock::Mutex;
 use lite_account_manager_common::{
     account_data::AccountData,
     account_filter::{AccountFilter, AccountFilterType},
+    account_filters_interface::AccountFiltersStoreInterface,
     account_store_interface::{AccountLoadingError, AccountStorageInterface},
     accounts_source_interface::AccountsSourceInterface,
     commitment::Commitment,

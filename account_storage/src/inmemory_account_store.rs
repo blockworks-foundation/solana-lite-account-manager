@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use dashmap::DashMap;
 use lite_account_manager_common::{
     account_data::AccountData,
-    account_filter::AccountFilterType,
+    account_filter::{AccountFilter, AccountFilterType},
     account_filters_interface::AccountFiltersStoreInterface,
     account_store_interface::{AccountLoadingError, AccountStorageInterface},
     commitment::Commitment,
@@ -245,6 +245,17 @@ impl AccountStorageInterface for InmemoryAccountStore {
         account_filters: Option<Vec<AccountFilterType>>,
         commitment: Commitment,
     ) -> Result<Vec<AccountData>, AccountLoadingError> {
+        if !self
+            .filtered_accounts
+            .contains_filter(&AccountFilter {
+                accounts: vec![],
+                program_id: Some(program_pubkey),
+                filters: account_filters.clone(),
+            })
+            .await
+        {
+            return Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters);
+        }
         if let Some(program_accounts) = self.accounts_by_owner.get(&program_pubkey) {
             let mut return_vec = vec![];
             for program_account in program_accounts.iter() {
@@ -268,7 +279,7 @@ impl AccountStorageInterface for InmemoryAccountStore {
             }
             Ok(return_vec)
         } else {
-            Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
+            Ok(vec![])
         }
     }
 
@@ -2413,6 +2424,141 @@ mod tests {
                 .await
                 .unwrap(),
             vec![]
+        );
+    }
+
+    #[tokio::test]
+    pub async fn test_snapshot_creation_and_loading() {
+        let program_1 = Pubkey::new_unique();
+        let program_2 = Pubkey::new_unique();
+        let filter_store = new_filter_store(vec![
+            AccountFilter {
+                program_id: Some(program_1),
+                accounts: vec![],
+                filters: None,
+            },
+            AccountFilter {
+                program_id: Some(program_2),
+                accounts: vec![],
+                filters: None,
+            },
+        ]);
+
+        let store = InmemoryAccountStore::new(filter_store.clone());
+        let mut rng = rand::thread_rng();
+        let pk1 = Pubkey::new_unique();
+        let pk2 = Pubkey::new_unique();
+        let pk3 = Pubkey::new_unique();
+        let pk4 = Pubkey::new_unique();
+
+        let account1 = create_random_account(&mut rng, 1, pk1, program_1);
+        let account2 = create_random_account(&mut rng, 1, pk2, program_1);
+        let account3 = create_random_account(&mut rng, 1, pk3, program_2);
+        let account4 = create_random_account(&mut rng, 1, pk4, program_2);
+
+        store.initilize_or_update_account(account1).await;
+        store.initilize_or_update_account(account2).await;
+        store.initilize_or_update_account(account3).await;
+        store.initilize_or_update_account(account4).await;
+
+        let account1 = create_random_account(&mut rng, 2, pk1, program_1);
+        let account2 = create_random_account(&mut rng, 2, pk2, program_1);
+        let account3 = create_random_account(&mut rng, 2, pk3, program_2);
+        let account4 = create_random_account(&mut rng, 2, pk4, program_2);
+
+        store
+            .update_account(account1.clone(), Commitment::Processed)
+            .await;
+        store
+            .update_account(account2.clone(), Commitment::Processed)
+            .await;
+        store
+            .update_account(account3.clone(), Commitment::Processed)
+            .await;
+        store
+            .update_account(account4.clone(), Commitment::Processed)
+            .await;
+        let account1_bis = create_random_account(&mut rng, 3, pk1, program_1);
+        let account3_bis = create_random_account(&mut rng, 3, pk3, program_2);
+        store
+            .update_account(account1_bis.clone(), Commitment::Processed)
+            .await;
+        store
+            .update_account(account3_bis.clone(), Commitment::Processed)
+            .await;
+
+        store
+            .process_slot_data(
+                SlotInfo {
+                    parent: 1,
+                    slot: 2,
+                    root: 0,
+                },
+                Commitment::Finalized,
+            )
+            .await;
+
+        let gpa_1 = store
+            .get_program_accounts(program_1, None, Commitment::Processed)
+            .await
+            .unwrap();
+        assert!(
+            gpa_1 == vec![account1_bis.clone(), account2.clone()]
+                || gpa_1 == vec![account2.clone(), account1_bis.clone()]
+        );
+
+        let gpa_2 = store
+            .get_program_accounts(program_2, None, Commitment::Processed)
+            .await
+            .unwrap();
+        assert!(
+            gpa_2 == vec![account3_bis.clone(), account4.clone()]
+                || gpa_2 == vec![account4.clone(), account3_bis.clone()]
+        );
+
+        // create snapshot and load
+        let snapshot_program_1 = store.create_snapshot(program_1).await.unwrap();
+        let snapshot_program_2 = store.create_snapshot(program_2).await.unwrap();
+
+        let snapshot_store = InmemoryAccountStore::new(filter_store);
+        // is empty
+        let gpa_1 = snapshot_store
+            .get_program_accounts(program_1, None, Commitment::Processed)
+            .await
+            .unwrap();
+        assert_eq!(gpa_1, vec![]);
+
+        let gpa_2 = snapshot_store
+            .get_program_accounts(program_2, None, Commitment::Processed)
+            .await
+            .unwrap();
+        assert_eq!(gpa_2, vec![]);
+
+        snapshot_store
+            .load_from_snapshot(program_1, snapshot_program_1)
+            .await
+            .unwrap();
+        snapshot_store
+            .load_from_snapshot(program_2, snapshot_program_2)
+            .await
+            .unwrap();
+
+        let gpa_1 = snapshot_store
+            .get_program_accounts(program_1, None, Commitment::Processed)
+            .await
+            .unwrap();
+        assert!(
+            gpa_1 == vec![account1.clone(), account2.clone()]
+                || gpa_1 == vec![account2.clone(), account1.clone()]
+        );
+
+        let gpa_2 = snapshot_store
+            .get_program_accounts(program_2, None, Commitment::Processed)
+            .await
+            .unwrap();
+        assert!(
+            gpa_2 == vec![account3.clone(), account4.clone()]
+                || gpa_2 == vec![account4.clone(), account3.clone()]
         );
     }
 }

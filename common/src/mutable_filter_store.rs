@@ -25,11 +25,6 @@ impl MutableFilterStore {
         lk.contains_account(account_pk)
     }
 
-    pub async fn contains_filter(&self, account_filter: &AccountFilter) -> bool {
-        let lk = self.filter_store.read().await;
-        lk.contains_filter(account_filter)
-    }
-
     pub async fn satisfies_filter(&self, account: &AccountData) -> bool {
         let lk = self.filter_store.read().await;
         lk.satisfies_filter(account)
@@ -40,5 +35,10 @@ impl MutableFilterStore {
 impl AccountFiltersStoreInterface for MutableFilterStore {
     async fn satisfies(&self, account_data: &AccountData) -> bool {
         self.satisfies_filter(account_data).await
+    }
+
+    async fn contains_filter(&self, filter: &AccountFilter) -> bool {
+        let lk = self.filter_store.read().await;
+        lk.contains_filter(filter).await
     }
 }
