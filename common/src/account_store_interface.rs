@@ -16,6 +16,8 @@ pub enum AccountLoadingError {
     TokenAccountsCannotUseThisFilter,
     WrongIndex,
     ShouldContainAnAccountFilter,
+    DeserializationIssues,
+    CompressionIssues,
 }
 
 #[async_trait]
@@ -39,4 +41,13 @@ pub trait AccountStorageInterface: Send + Sync {
     ) -> Result<Vec<AccountData>, AccountLoadingError>;
 
     async fn process_slot_data(&self, slot: SlotInfo, commitment: Commitment) -> Vec<AccountData>;
+
+    // snapshot should always be created at finalized slot
+    async fn create_snapshot(&self, program_id: Pubkey) -> Result<Vec<u8>, AccountLoadingError>;
+
+    async fn load_from_snapshot(
+        &self,
+        program_id: Pubkey,
+        snapshot: Vec<u8>,
+    ) -> Result<(), AccountLoadingError>;
 }

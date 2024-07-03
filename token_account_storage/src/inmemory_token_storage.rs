@@ -16,11 +16,12 @@ use lite_account_manager_common::{
     commitment::Commitment,
     slot_info::SlotInfo,
 };
+use serde::{Deserialize, Serialize};
 use solana_sdk::{clock::Slot, pubkey::Pubkey};
 use tokio::sync::RwLock;
 
 use crate::{
-    account_types::{MintData, MultiSig, TokenAccount},
+    account_types::{MintAccount, MultiSig, Program, TokenAccount},
     token_program_utils::{
         get_spl_token_owner_mint_filter, get_token_program_account_type,
         token_account_to_solana_account, token_mint_to_solana_account,
@@ -123,7 +124,7 @@ impl ProcessedAccountStore {
     pub async fn get_processed_for_slot(
         &self,
         slot_info: SlotInfo,
-        mints_by_index: &Arc<DashMap<u64, MintData>>,
+        mints_by_index: &Arc<DashMap<u64, MintAccount>>,
     ) -> Vec<AccountData> {
         let lk = self.processed_slot_accounts.read().await;
         match lk.get(&slot_info.slot) {
@@ -272,7 +273,7 @@ impl ProcessedAccountStore {
 }
 
 pub struct InMemoryTokenStorage {
-    mints_by_index: Arc<DashMap<u64, MintData>>,
+    mints_by_index: Arc<DashMap<u64, MintAccount>>,
     mints_index_by_pubkey: Arc<DashMap<Pubkey, u64>>,
     multisigs: Arc<DashMap<Pubkey, MultiSig>>,
     accounts_index_by_mint: Arc<DashMap<u64, Vec<u64>>>,
@@ -351,20 +352,13 @@ impl InMemoryTokenStorage {
             TokenProgramAccountType::Mint(mint_data) => {
                 match self.mints_index_by_pubkey.entry(mint_data.pubkey) {
                     dashmap::mapref::entry::Entry::Occupied(occ) => {
-                        self.mints_by_index.get_mut(occ.get()).unwrap().mint_account =
-                            Some(mint_data);
+                        self.mints_by_index.insert(*occ.get(), mint_data);
                     }
                     dashmap::mapref::entry::Entry::Vacant(v) => {
                         let index = self
                             .mint_counter
                             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        self.mints_by_index.insert(
-                            index,
-                            MintData {
-                                pubkey: mint_data.pubkey,
-                                mint_account: Some(mint_data),
-                            },
-                        );
+                        self.mints_by_index.insert(index, mint_data);
                         v.insert(index);
                     }
                 }
@@ -414,16 +408,11 @@ impl InMemoryTokenStorage {
 
         if let Some(mint_index) = self.mints_index_by_pubkey.get(&account_pk) {
             let mint_data = self.mints_by_index.get(&mint_index).unwrap();
-            if let Some(mint_account) = &mint_data.mint_account {
-                return Some(token_mint_to_solana_account(
-                    mint_account,
-                    self.finalized_slot.load(Ordering::Relaxed),
-                    0,
-                ));
-            } else {
-                log::error!("mint data not found");
-                return None;
-            }
+            return Some(token_mint_to_solana_account(
+                &mint_data,
+                self.finalized_slot.load(Ordering::Relaxed),
+                0,
+            ));
         }
 
         if let Some(ite) = self.account_index_by_pubkey.get(&account_pk) {
@@ -514,6 +503,13 @@ impl InMemoryTokenStorage {
             Err(AccountLoadingError::ShouldContainAnAccountFilter)
         }
     }
+}
+
+#[derive(Serialize, Deserialize)]
+struct TokenProgramSnapshot {
+    pub mints: Vec<(u64, MintAccount)>,
+    pub multisigs: Vec<MultiSig>,
+    pub token_accounts: Vec<TokenAccount>,
 }
 
 #[async_trait]
@@ -687,5 +683,127 @@ impl AccountStorageInterface for InMemoryTokenStorage {
                 accounts_notifications
             }
         }
+    }
+
+    async fn create_snapshot(&self, program_id: Pubkey) -> Result<Vec<u8>, AccountLoadingError> {
+        let program = if program_id == spl_token::id() {
+            Program::TokenProgram
+        } else if program_id == spl_token_2022::id() {
+            Program::Token2022Program
+        } else {
+            return Err(AccountLoadingError::WrongIndex);
+        };
+
+        let mints = self
+            .mints_by_index
+            .iter()
+            .filter_map(|mint_data| {
+                if mint_data.program == program {
+                    Some((*mint_data.key(), mint_data.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect_vec();
+
+        let multisigs = self.multisigs.iter().map(|ite| ite.clone()).collect_vec();
+        let token_accounts = self
+            .token_accounts
+            .read()
+            .await
+            .iter()
+            .filter(|x| x.program == program && x.lamports > 0)
+            .cloned()
+            .collect_vec();
+
+        let snapshot = TokenProgramSnapshot {
+            mints,
+            multisigs,
+            token_accounts,
+        };
+        let binary = bincode::serialize(&snapshot).unwrap();
+        drop(snapshot);
+        Ok(lz4::block::compress(
+            &binary,
+            Some(lz4::block::CompressionMode::HIGHCOMPRESSION(8)),
+            false,
+        )
+        .map_err(|_| AccountLoadingError::CompressionIssues)?)
+    }
+
+    async fn load_from_snapshot(
+        &self,
+        _program_id: Pubkey,
+        snapshot: Vec<u8>,
+    ) -> Result<(), AccountLoadingError> {
+        let decompress = lz4::block::decompress(&snapshot, None)
+            .map_err(|_| AccountLoadingError::CompressionIssues)?;
+        drop(snapshot);
+        let snapshot = bincode::deserialize::<TokenProgramSnapshot>(&decompress)
+            .map_err(|_| AccountLoadingError::DeserializationIssues)?;
+        let TokenProgramSnapshot {
+            mints,
+            multisigs,
+            token_accounts,
+        } = snapshot;
+
+        for multisig in multisigs {
+            self.multisigs.insert(multisig.pubkey, multisig);
+        }
+
+        let mut mint_mapping = HashMap::<u64, u64>::new();
+        // remap all the mints
+        for (index, mint_account) in mints {
+            match self.mints_index_by_pubkey.get_mut(&mint_account.pubkey) {
+                Some(value) => {
+                    mint_mapping.insert(index, *value);
+                    self.mints_by_index.insert(index, mint_account);
+                }
+                None => {
+                    let mint_index = self.mint_counter.fetch_add(1, Ordering::Relaxed);
+                    mint_mapping.insert(index, mint_index);
+                    self.mints_by_index.insert(mint_index, mint_account);
+                }
+            }
+        }
+
+        let mut lk = self.token_accounts.write().await;
+        for mut token_account in token_accounts {
+            // use the new mint index
+            let new_mint_index = *mint_mapping.get(&token_account.mint).unwrap();
+            token_account.mint = new_mint_index;
+            match self.account_index_by_pubkey.get(&token_account.pubkey) {
+                Some(exists) => {
+                    // pubkey is already present, replace existing
+                    let index = *exists as usize;
+                    *lk.get_mut(index).unwrap() = token_account;
+                }
+                None => {
+                    let index = lk.len() as u64;
+                    let pk = token_account.pubkey;
+                    let owner = token_account.owner;
+                    lk.push_back(token_account);
+                    self.account_index_by_pubkey.insert(pk, index);
+                    match self.account_by_owner_pubkey.get_mut(&owner) {
+                        Some(mut accs) => accs.push(index),
+                        None => {
+                            self.account_by_owner_pubkey.insert(owner, vec![index]);
+                        }
+                    }
+
+                    match self.accounts_index_by_mint.get_mut(&new_mint_index) {
+                        Some(mut accs) => {
+                            accs.push(index);
+                        }
+                        None => {
+                            self.accounts_index_by_mint
+                                .insert(new_mint_index, vec![index]);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 }

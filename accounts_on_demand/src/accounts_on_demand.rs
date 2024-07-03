@@ -233,4 +233,16 @@ impl AccountStorageInterface for AccountsOnDemand {
             .process_slot_data(slot_info, commitment)
             .await
     }
+
+    async fn create_snapshot(&self, program_id: Pubkey) -> Result<Vec<u8>, AccountLoadingError> {
+        self.accounts_storage.create_snapshot(program_id).await
+    }
+
+    async fn load_from_snapshot(
+        &self,
+        program_id: Pubkey,
+        snapshot: Vec<u8>,
+    ) -> Result<(), AccountLoadingError> {
+        self.load_from_snapshot(program_id, snapshot).await
+    }
 }

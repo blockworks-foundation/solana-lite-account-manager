@@ -1888,6 +1888,7 @@ name = "lite-account-storage"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "bincode",
  "dashmap",
  "futures",
  "itertools",
@@ -1932,6 +1933,7 @@ dependencies = [
  "lazy_static",
  "lite-account-manager-common",
  "log",
+ "lz4",
  "prometheus",
  "rand 0.8.5",
  "rand_chacha 0.3.1",

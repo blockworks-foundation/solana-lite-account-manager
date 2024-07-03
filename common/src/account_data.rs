@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
 use solana_rpc_client_api::filter::RpcFilterType;
 use solana_sdk::{
     account::Account as SolanaAccount, commitment_config::CommitmentConfig, pubkey::Pubkey,
@@ -10,14 +11,14 @@ use tokio::sync::broadcast::Receiver;
 // 64 MB
 const MAX_ACCOUNT_SIZE: usize = 64 * 1024 * 1024;
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum CompressionMethod {
     None,
     Lz4(i32),
     Zstd(i32),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Data {
     Uncompressed(Vec<u8>),
     Lz4 { binary: Vec<u8>, len: usize },
@@ -50,7 +51,7 @@ impl Data {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Account {
     /// lamports in the account
     pub lamports: u64,
@@ -111,7 +112,7 @@ impl Account {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AccountData {
     pub pubkey: Pubkey,
     pub account: Arc<Account>,

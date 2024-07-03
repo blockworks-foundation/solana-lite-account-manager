@@ -364,6 +364,26 @@ impl AccountStorageInterface for InmemoryAccountStore {
 
         updated_accounts
     }
+
+    async fn create_snapshot(&self, program_id: Pubkey) -> Result<Vec<u8>, AccountLoadingError> {
+        let accounts = self
+            .get_program_accounts(program_id, None, Commitment::Finalized)
+            .await?;
+        Ok(bincode::serialize(&accounts).unwrap())
+    }
+
+    async fn load_from_snapshot(
+        &self,
+        _program_id: Pubkey,
+        snapshot: Vec<u8>,
+    ) -> Result<(), AccountLoadingError> {
+        let accounts = bincode::deserialize::<Vec<AccountData>>(&snapshot)
+            .map_err(|_| AccountLoadingError::DeserializationIssues)?;
+        for account_data in accounts {
+            self.initilize_or_update_account(account_data).await;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]

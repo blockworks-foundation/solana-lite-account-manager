@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use solana_sdk::pubkey::Pubkey;
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum Program {
     TokenProgram,
@@ -47,15 +47,10 @@ pub struct MintAccount {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MultiSig {
     pub program: Program,
+    pub pubkey: Pubkey,
     pub lamports: u64,
     pub m: u8,
     pub n: u8,
     pub is_initialized: bool,
     pub signers: Vec<Pubkey>,
-}
-
-#[derive(Debug, Clone)]
-pub struct MintData {
-    pub pubkey: Pubkey,
-    pub mint_account: Option<MintAccount>,
 }

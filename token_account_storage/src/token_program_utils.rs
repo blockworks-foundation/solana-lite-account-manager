@@ -1,7 +1,7 @@
 use std::sync::{atomic::AtomicU64, Arc};
 
 use crate::account_types::{
-    MintAccount, MintData, MultiSig, Program, TokenAccount, TokenProgramAccountState,
+    MintAccount, MultiSig, Program, TokenAccount, TokenProgramAccountState,
 };
 use anyhow::bail;
 use dashmap::DashMap;
@@ -68,10 +68,10 @@ pub fn get_token_program_account_type(
             // extended token account
             if data[165] == 1 {
                 //mint
-                (0, false)
+                (0, true)
             } else if data[165] == 2 {
                 // token account
-                (1, false)
+                (1, true)
             } else {
                 bail!("unknown token account")
             }
@@ -136,6 +136,7 @@ pub fn get_token_program_account_type(
                 Ok(TokenProgramAccountType::MultiSig(
                     MultiSig {
                         program: crate::account_types::Program::Token2022Program,
+                        pubkey: account_data.pubkey,
                         lamports: account_data.account.lamports,
                         is_initialized: multi_sig.is_initialized,
                         m: multi_sig.m,
@@ -207,6 +208,7 @@ pub fn get_token_program_account_type(
             Ok(TokenProgramAccountType::MultiSig(
                 MultiSig {
                     program: crate::account_types::Program::TokenProgram,
+                    pubkey: account_data.pubkey,
                     lamports: account_data.account.lamports,
                     is_initialized: multi_sig.is_initialized,
                     m: multi_sig.m,
@@ -230,7 +232,7 @@ pub fn token_account_to_solana_account(
     token_account: &TokenAccount,
     updated_slot: u64,
     write_version: u64,
-    mints_by_index: &Arc<DashMap<u64, MintData>>,
+    mints_by_index: &Arc<DashMap<u64, MintAccount>>,
 ) -> Option<AccountData> {
     if token_account.lamports == 0 {
         return None;
@@ -436,7 +438,7 @@ pub fn token_program_account_to_solana_account(
     token_program_account: &TokenProgramAccountType,
     updated_slot: u64,
     write_version: u64,
-    mints_by_index: &Arc<DashMap<u64, MintData>>,
+    mints_by_index: &Arc<DashMap<u64, MintAccount>>,
 ) -> Option<AccountData> {
     match token_program_account {
         TokenProgramAccountType::TokenAccount(tok_acc) => {
