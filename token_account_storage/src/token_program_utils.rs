@@ -231,7 +231,10 @@ pub fn token_account_to_solana_account(
     updated_slot: u64,
     write_version: u64,
     mints_by_index: &Arc<DashMap<u64, MintData>>,
-) -> AccountData {
+) -> Option<AccountData> {
+    if token_account.lamports == 0 {
+        return None;
+    }
     let (delegate, delegated_amount) = token_account.delegate.unwrap_or_default();
     let mint = mints_by_index.get(&token_account.mint).unwrap();
     let data = match token_account.program {
@@ -306,12 +309,12 @@ pub fn token_account_to_solana_account(
         rent_epoch: u64::MAX,
         data_length,
     });
-    AccountData {
+    Some(AccountData {
         pubkey: token_account.pubkey,
         account,
         updated_slot,
         write_version,
-    }
+    })
 }
 
 pub fn token_mint_to_solana_account(
@@ -434,18 +437,20 @@ pub fn token_program_account_to_solana_account(
     updated_slot: u64,
     write_version: u64,
     mints_by_index: &Arc<DashMap<u64, MintData>>,
-) -> AccountData {
+) -> Option<AccountData> {
     match token_program_account {
         TokenProgramAccountType::TokenAccount(tok_acc) => {
             token_account_to_solana_account(tok_acc, updated_slot, write_version, mints_by_index)
         }
-        TokenProgramAccountType::Mint(mint_account) => {
-            token_mint_to_solana_account(mint_account, updated_slot, write_version)
-        }
-        TokenProgramAccountType::MultiSig(multisig, pubkey) => {
-            token_multisig_to_solana_account(multisig, *pubkey, updated_slot, write_version)
-        }
-        TokenProgramAccountType::Deleted(_) => unreachable!(),
+        TokenProgramAccountType::Mint(mint_account) => Some(token_mint_to_solana_account(
+            mint_account,
+            updated_slot,
+            write_version,
+        )),
+        TokenProgramAccountType::MultiSig(multisig, pubkey) => Some(
+            token_multisig_to_solana_account(multisig, *pubkey, updated_slot, write_version),
+        ),
+        TokenProgramAccountType::Deleted(_) => None,
     }
 }
 
@@ -492,8 +497,7 @@ pub fn get_spl_token_owner_mint_filter(
             _ => {}
         }
     }
-    if data_size_filter == Some(account_packed_len as u64)
-        || memcmp_filter == Some(&[ACCOUNTTYPE_ACCOUNT])
+    if data_size_filter == Some(account_packed_len) || memcmp_filter == Some(&[ACCOUNTTYPE_ACCOUNT])
     {
         if let Some(incorrect_owner_len) = incorrect_owner_len {
             log::error!(

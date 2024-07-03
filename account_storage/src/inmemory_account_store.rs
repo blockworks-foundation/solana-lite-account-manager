@@ -431,7 +431,7 @@ mod tests {
 
     pub fn new_slot_info(slot: u64) -> SlotInfo {
         SlotInfo {
-            slot: slot,
+            slot,
             parent: slot.saturating_sub(1),
             root: 0,
         }
