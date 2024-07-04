@@ -40,7 +40,11 @@ pub trait AccountStorageInterface: Send + Sync {
         commitment: Commitment,
     ) -> Result<Vec<AccountData>, AccountLoadingError>;
 
-    async fn process_slot_data(&self, slot: SlotInfo, commitment: Commitment) -> Vec<AccountData>;
+    async fn process_slot_data(
+        &self,
+        slot_info: SlotInfo,
+        commitment: Commitment,
+    ) -> Vec<AccountData>;
 
     // snapshot should always be created at finalized slot
     async fn create_snapshot(&self, program_id: Pubkey) -> Result<Vec<u8>, AccountLoadingError>;
