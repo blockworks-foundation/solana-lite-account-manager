@@ -489,6 +489,7 @@ impl InMemoryTokenStorage {
                     None => Ok(vec![]),
                 }
             } else if let Some(mint) = mint {
+                // token account filter
                 match self.mints_index_by_pubkey.get(&mint) {
                     Some(mint_index) => match self.accounts_index_by_mint.get(mint_index.value()) {
                         Some(token_acc_indexes) => {
@@ -512,6 +513,21 @@ impl InMemoryTokenStorage {
                     },
                     None => Ok(vec![]),
                 }
+            } else if account_filters.contains(&AccountFilterType::Datasize(82)) {
+                // filtering by mint
+                let mints = self
+                    .mints_by_index
+                    .iter()
+                    .map(|mint_account| {
+                        token_mint_to_solana_account(mint_account.value(), finalized_slot, 0)
+                    })
+                    .filter(|account| {
+                        account_filters
+                            .iter()
+                            .all(|filter| filter.allows(&account.account.data.data()))
+                    })
+                    .collect_vec();
+                Ok(mints)
             } else {
                 Err(AccountLoadingError::ShouldContainAnAccountFilter)
             }

@@ -28,6 +28,7 @@ impl TokenAccountParams {
         }
     }
 
+    #[allow(dead_code)]
     pub fn create_random(
         rng: &mut ThreadRng,
         owner: Pubkey,
@@ -72,6 +73,7 @@ impl MintCreationParams {
         }
     }
 
+    #[allow(dead_code)]
     pub fn create_random(rng: &mut ThreadRng, supply: u64) -> MintCreationParams {
         MintCreationParams {
             mint_authority: Some(Pubkey::new_unique()),
@@ -128,6 +130,7 @@ pub fn create_token_account_data(
     }
 }
 
+#[allow(dead_code)]
 fn coption_to_option<T>(coption: COption<T>) -> Option<T> {
     match coption {
         COption::Some(t) => Some(t),
@@ -135,6 +138,7 @@ fn coption_to_option<T>(coption: COption<T>) -> Option<T> {
     }
 }
 
+#[allow(dead_code)]
 pub fn parse_account_data_to_token_params(account_data: AccountData) -> TokenAccountParams {
     let token_account =
         spl_token::state::Account::unpack(&account_data.account.data.data()).unwrap();
@@ -191,6 +195,7 @@ pub fn create_mint_account_data(
     }
 }
 
+#[allow(dead_code)]
 pub fn parse_account_data_to_mint_params(account_data: AccountData) -> MintCreationParams {
     let mint = spl_token::state::Mint::unpack(&account_data.account.data.data()).unwrap();
     MintCreationParams {
