@@ -8,12 +8,56 @@ pub enum Program {
     Token2022Program,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum TokenProgramAccountState {
     Uninitialized,
     Initialized,
     Frozen,
+}
+
+impl TokenProgramAccountState {
+    pub fn into_spl_state(&self) -> spl_token::state::AccountState {
+        match self {
+            TokenProgramAccountState::Uninitialized => {
+                spl_token::state::AccountState::Uninitialized
+            }
+            TokenProgramAccountState::Initialized => spl_token::state::AccountState::Initialized,
+            TokenProgramAccountState::Frozen => spl_token::state::AccountState::Frozen,
+        }
+    }
+
+    pub fn into_spl_2022_state(&self) -> spl_token_2022::state::AccountState {
+        match self {
+            TokenProgramAccountState::Uninitialized => {
+                spl_token_2022::state::AccountState::Uninitialized
+            }
+            TokenProgramAccountState::Initialized => {
+                spl_token_2022::state::AccountState::Initialized
+            }
+            TokenProgramAccountState::Frozen => spl_token_2022::state::AccountState::Frozen,
+        }
+    }
+}
+
+impl From<spl_token::state::AccountState> for TokenProgramAccountState {
+    fn from(value: spl_token::state::AccountState) -> Self {
+        match value {
+            spl_token::state::AccountState::Uninitialized => Self::Uninitialized,
+            spl_token::state::AccountState::Initialized => Self::Initialized,
+            spl_token::state::AccountState::Frozen => Self::Frozen,
+        }
+    }
+}
+
+impl From<spl_token_2022::state::AccountState> for TokenProgramAccountState {
+    fn from(value: spl_token_2022::state::AccountState) -> Self {
+        match value {
+            spl_token_2022::state::AccountState::Uninitialized => Self::Uninitialized,
+            spl_token_2022::state::AccountState::Initialized => Self::Initialized,
+            spl_token_2022::state::AccountState::Frozen => Self::Frozen,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
