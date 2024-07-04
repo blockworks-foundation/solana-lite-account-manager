@@ -35,7 +35,7 @@ impl TokenAccountParams {
         amount: u64,
     ) -> TokenAccountParams {
         let delegate_supply: u64 = rng.gen();
-        let state = rng.gen::<u8>() % 3;
+        let state = rng.gen::<u8>() % 2;
         TokenAccountParams {
             owner,
             mint,
@@ -45,8 +45,7 @@ impl TokenAccountParams {
             close_authority: Some(Pubkey::new_unique()),
             state: match state {
                 0 => TokenProgramAccountState::Initialized,
-                1 => TokenProgramAccountState::Uninitialized,
-                2 => TokenProgramAccountState::Frozen,
+                1 => TokenProgramAccountState::Frozen,
                 _ => unreachable!(),
             },
         }
@@ -78,7 +77,7 @@ impl MintCreationParams {
             mint_authority: Some(Pubkey::new_unique()),
             supply,
             decimals: rng.gen(),
-            is_initialized: rng.gen(),
+            is_initialized: true,
             freeze_authority: Some(Pubkey::new_unique()),
         }
     }

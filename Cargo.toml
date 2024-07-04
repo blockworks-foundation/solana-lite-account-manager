@@ -40,6 +40,7 @@ lazy_static = "1.4.0"
 async-trait = "0.1.68"
 base64 = "0.21.0"
 futures = "0.3.28"
+tracing-subscriber = "0.3.16"
 
 # spl token
 spl-token = "~4.0.0"

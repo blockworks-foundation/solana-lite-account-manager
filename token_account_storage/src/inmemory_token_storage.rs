@@ -63,6 +63,11 @@ impl ProcessedAccountStore {
                 {
                     Some(acc) => {
                         if acc.write_version < write_version {
+                            log::debug!(
+                                "updating an existing account {account_pk:?} from {} to {}",
+                                acc.write_version,
+                                write_version
+                            );
                             acc.write_version = write_version;
                             acc.processed_account = processed_account;
                             true
@@ -71,6 +76,7 @@ impl ProcessedAccountStore {
                         }
                     }
                     None => {
+                        log::debug!("Adding a new account {account_pk:?} to slot {slot}");
                         processed_account_by_slot.processed_accounts.insert(
                             account_pk,
                             ProcessedAccount {
@@ -83,6 +89,7 @@ impl ProcessedAccountStore {
                 }
             }
             None => {
+                log::debug!("Adding a new slot {slot} with new account {account_pk:?}");
                 let mut processed_accounts = HashMap::new();
                 processed_accounts.insert(
                     account_pk,
@@ -104,6 +111,12 @@ impl ProcessedAccountStore {
     }
 
     pub async fn update_slot_info(&self, slot_info: SlotInfo) {
+        log::debug!(
+            "update slot info slot : {}, parent: {}, root: {}",
+            slot_info.slot,
+            slot_info.parent,
+            slot_info.root
+        );
         let mut lk = self.processed_slot_accounts.write().await;
         match lk.get_mut(&slot_info.slot) {
             Some(processed_account_by_slot) => {
@@ -150,8 +163,9 @@ impl ProcessedAccountStore {
     }
 
     // returns list of accounts that are finalized
-    pub async fn finalize(&self, slot: u64) -> Vec<ProcessedAccount> {
-        let mut map_of_accounts: HashMap<Pubkey, ProcessedAccount> = HashMap::new();
+    pub async fn finalize(&self, slot: u64) -> Vec<(ProcessedAccount, u64)> {
+        log::debug!("finalizing slot : {slot}");
+        let mut map_of_accounts: HashMap<Pubkey, (ProcessedAccount, u64)> = HashMap::new();
         let mut lk = self.processed_slot_accounts.write().await;
         let mut process_slot = Some(slot);
         while let Some(current_slot) = process_slot {
@@ -163,7 +177,7 @@ impl ProcessedAccountStore {
                         // if the key already exists then we do not insert in the map
                         match map_of_accounts.entry(pk) {
                             std::collections::hash_map::Entry::Vacant(vac) => {
-                                vac.insert(acc);
+                                vac.insert((acc, current_slot));
                             }
                             std::collections::hash_map::Entry::Occupied(_) => {
                                 // already present
@@ -198,7 +212,7 @@ impl ProcessedAccountStore {
     pub async fn get_confirmed_accounts(
         &self,
         account_pks: Vec<Pubkey>,
-        return_list: &mut [Option<ProcessedAccount>],
+        return_list: &mut [Option<(ProcessedAccount, u64)>],
         confirmed_slot: Slot,
     ) {
         let mut process_slot = Some(confirmed_slot);
@@ -211,7 +225,8 @@ impl ProcessedAccountStore {
                             continue;
                         }
                         if let Some(acc) = processed_accounts.processed_accounts.get(account_pk) {
-                            *return_list.get_mut(index).unwrap() = Some(acc.clone());
+                            *return_list.get_mut(index).unwrap() =
+                                Some((acc.clone(), current_slot));
                         }
                     }
                     if return_list.iter().all(|x| x.is_some()) {
@@ -231,13 +246,14 @@ impl ProcessedAccountStore {
         account_pks: Vec<Pubkey>,
         commitment: Commitment,
         confirmed_slot: Slot,
-    ) -> Vec<Option<ProcessedAccount>> {
+    ) -> Vec<Option<(ProcessedAccount, u64)>> {
         let mut return_list = vec![None; account_pks.len()];
         match commitment {
             Commitment::Processed => {
                 let lk = self.processed_slot_accounts.read().await;
                 // iterate backwards on all the processed slots until we reach confirmed slot
                 for (slot, processed_account_slots) in lk.iter().rev() {
+                    log::debug!("getting processed account at slot : {}", slot);
                     if *slot > confirmed_slot {
                         for (index, account_pk) in account_pks.iter().enumerate() {
                             if return_list.get(index).unwrap().is_some() {
@@ -247,7 +263,7 @@ impl ProcessedAccountStore {
                                 processed_account_slots.processed_accounts.get(account_pk)
                             {
                                 *return_list.get_mut(index).unwrap() =
-                                    Some(processed_account.clone());
+                                    Some((processed_account.clone(), *slot));
                             }
                         }
 
@@ -519,6 +535,11 @@ impl AccountStorageInterface for InMemoryTokenStorage {
             return false;
         }
 
+        log::debug!(
+            "update account : {} for commitment : {}",
+            account_data.pubkey.to_string(),
+            commitment
+        );
         let token_program_account = match get_token_program_account_type(
             &account_data,
             &self.mints_index_by_pubkey,
@@ -549,6 +570,7 @@ impl AccountStorageInterface for InMemoryTokenStorage {
             return;
         }
 
+        log::debug!("initializing account : {}", account_data.pubkey.to_string());
         // add account for finalized commitment
         let token_program_account = match get_token_program_account_type(
             &account_data,
@@ -569,6 +591,7 @@ impl AccountStorageInterface for InMemoryTokenStorage {
         account_pk: Pubkey,
         commitment: Commitment,
     ) -> Result<Option<AccountData>, AccountLoadingError> {
+        log::debug!("get account : {}", account_pk.to_string());
         match commitment {
             Commitment::Confirmed | Commitment::Processed => {
                 match self
@@ -582,9 +605,9 @@ impl AccountStorageInterface for InMemoryTokenStorage {
                     .get(0)
                     .unwrap()
                 {
-                    Some(processed_account) => Ok(token_program_account_to_solana_account(
+                    Some((processed_account, slot)) => Ok(token_program_account_to_solana_account(
                         &processed_account.processed_account,
-                        self.confirmed_slot.load(Ordering::Relaxed),
+                        *slot,
                         0,
                         &self.mints_by_index,
                     )),
@@ -618,10 +641,10 @@ impl AccountStorageInterface for InMemoryTokenStorage {
                 .await;
             let mut to_remove = vec![];
             for (index, processed_account) in processed_accounts.iter().enumerate() {
-                if let Some(processed_account) = processed_account {
+                if let Some((processed_account, slot)) = processed_account {
                     let updated_account = token_program_account_to_solana_account(
                         &processed_account.processed_account,
-                        confirmed_slot,
+                        *slot,
                         processed_account.write_version,
                         &self.mints_by_index,
                     );
@@ -652,31 +675,42 @@ impl AccountStorageInterface for InMemoryTokenStorage {
     ) -> Vec<AccountData> {
         match commitment {
             Commitment::Processed => {
+                log::debug!("process slot data  : {slot_info:?}");
                 self.processed_storage.update_slot_info(slot_info).await;
                 vec![]
             }
             Commitment::Confirmed => {
-                self.confirmed_slot.store(slot_info.slot, Ordering::Relaxed);
+                log::debug!("confirm slot data  : {slot_info:?}");
+                if self.confirmed_slot.load(Ordering::Relaxed) < slot_info.slot {
+                    self.confirmed_slot.store(slot_info.slot, Ordering::Relaxed);
+                    self.processed_storage.update_slot_info(slot_info).await;
+                }
                 self.processed_storage
                     .get_processed_for_slot(slot_info, &self.mints_by_index)
                     .await
             }
             Commitment::Finalized => {
-                self.finalized_slot.store(slot_info.slot, Ordering::Relaxed);
+                log::debug!("finalize slot data  : {slot_info:?}");
+                if self.finalized_slot.load(Ordering::Relaxed) < slot_info.slot {
+                    self.processed_storage.update_slot_info(slot_info).await;
+                    self.finalized_slot.store(slot_info.slot, Ordering::Relaxed);
+                }
+
                 // move data from processed storage to main storage
                 let finalized_accounts = self.processed_storage.finalize(slot_info.slot).await;
+
                 let accounts_notifications = finalized_accounts
                     .iter()
-                    .filter_map(|acc| {
+                    .filter_map(|(acc, slot)| {
                         token_program_account_to_solana_account(
                             &acc.processed_account,
-                            slot_info.slot,
+                            *slot,
                             acc.write_version,
                             &self.mints_by_index,
                         )
                     })
                     .collect_vec();
-                for finalized_account in finalized_accounts {
+                for (finalized_account, _) in finalized_accounts {
                     self.add_account_finalized(finalized_account.processed_account)
                         .await;
                 }

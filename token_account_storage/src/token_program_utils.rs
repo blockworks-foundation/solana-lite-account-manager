@@ -25,6 +25,17 @@ pub enum TokenProgramAccountType {
     Deleted(Pubkey),
 }
 
+impl TokenProgramAccountType {
+    pub fn pubkey(&self) -> Pubkey {
+        match self {
+            TokenProgramAccountType::TokenAccount(acc) => acc.pubkey,
+            TokenProgramAccountType::Mint(m) => m.pubkey,
+            TokenProgramAccountType::MultiSig(_, pk) => *pk,
+            TokenProgramAccountType::Deleted(pk) => *pk,
+        }
+    }
+}
+
 pub fn get_or_create_mint_index(
     mint: Pubkey,
     mint_index_by_pubkey: &Arc<DashMap<Pubkey, u64>>,
@@ -224,7 +235,7 @@ pub fn get_token_program_account_type(
             ))
         }
     } else {
-        bail!("Account does not belong to token program");
+        unreachable!()
     }
 }
 
