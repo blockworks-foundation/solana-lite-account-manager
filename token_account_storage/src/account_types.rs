@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use solana_sdk::pubkey::Pubkey;
 
+pub type MintIndex = u32;
+pub type TokenAccountIndex = u32;
+
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum Program {
@@ -64,7 +67,7 @@ impl From<spl_token_2022::state::AccountState> for TokenProgramAccountState {
 pub struct TokenAccount {
     pub program: Program,
     pub pubkey: Pubkey,
-    pub mint: u64,
+    pub mint: MintIndex,
     pub owner: Pubkey,
     pub amount: u64,
     pub state: TokenProgramAccountState,

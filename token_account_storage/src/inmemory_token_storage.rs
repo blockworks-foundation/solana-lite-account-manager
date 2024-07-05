@@ -1,7 +1,7 @@
 use std::{
     collections::{BTreeMap, HashMap, VecDeque},
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicU32, AtomicU64, Ordering},
         Arc,
     },
 };
@@ -21,7 +21,7 @@ use solana_sdk::{clock::Slot, pubkey::Pubkey};
 use tokio::sync::RwLock;
 
 use crate::{
-    account_types::{MintAccount, MultiSig, Program, TokenAccount},
+    account_types::{MintAccount, MintIndex, MultiSig, Program, TokenAccount, TokenAccountIndex},
     token_program_utils::{
         get_spl_token_owner_mint_filter, get_token_program_account_type,
         token_account_to_solana_account, token_mint_to_solana_account,
@@ -137,7 +137,7 @@ impl ProcessedAccountStore {
     pub async fn get_processed_for_slot(
         &self,
         slot_info: SlotInfo,
-        mints_by_index: &Arc<DashMap<u64, MintAccount>>,
+        mints_by_index: &Arc<DashMap<MintIndex, MintAccount>>,
     ) -> Vec<AccountData> {
         let lk = self.processed_slot_accounts.read().await;
         match lk.get(&slot_info.slot) {
@@ -289,17 +289,17 @@ impl ProcessedAccountStore {
 }
 
 pub struct InMemoryTokenStorage {
-    mints_by_index: Arc<DashMap<u64, MintAccount>>,
-    mints_index_by_pubkey: Arc<DashMap<Pubkey, u64>>,
+    mints_by_index: Arc<DashMap<MintIndex, MintAccount>>,
+    mints_index_by_pubkey: Arc<DashMap<Pubkey, MintIndex>>,
     multisigs: Arc<DashMap<Pubkey, MultiSig>>,
-    accounts_index_by_mint: Arc<DashMap<u64, Vec<u64>>>,
-    account_index_by_pubkey: Arc<DashMap<Pubkey, u64>>,
-    account_by_owner_pubkey: Arc<DashMap<Pubkey, Vec<u64>>>,
+    accounts_index_by_mint: Arc<DashMap<MintIndex, VecDeque<TokenAccountIndex>>>,
+    account_index_by_pubkey: Arc<DashMap<Pubkey, TokenAccountIndex>>,
+    account_by_owner_pubkey: Arc<DashMap<Pubkey, Vec<TokenAccountIndex>>>,
     token_accounts: Arc<RwLock<VecDeque<TokenAccount>>>,
     processed_storage: ProcessedAccountStore,
     confirmed_slot: Arc<AtomicU64>,
     finalized_slot: Arc<AtomicU64>,
-    mint_counter: Arc<AtomicU64>,
+    mint_counter: Arc<AtomicU32>,
 }
 
 impl InMemoryTokenStorage {
@@ -316,7 +316,7 @@ impl InMemoryTokenStorage {
             processed_storage: ProcessedAccountStore::default(),
             confirmed_slot: Arc::new(AtomicU64::new(0)),
             finalized_slot: Arc::new(AtomicU64::new(0)),
-            mint_counter: Arc::new(AtomicU64::new(0)),
+            mint_counter: Arc::new(AtomicU32::new(0)),
         }
     }
 
@@ -338,28 +338,30 @@ impl InMemoryTokenStorage {
                     dashmap::mapref::entry::Entry::Vacant(v) => {
                         // add new token account
                         let mut write_lk = self.token_accounts.write().await;
-                        let token_index = write_lk.len();
+                        let token_index = write_lk.len() as TokenAccountIndex;
                         write_lk.push_back(token_account);
-                        v.insert(token_index as u64);
+                        v.insert(token_index as TokenAccountIndex);
                         drop(write_lk);
 
                         // add account index in accounts_index_by_mint map
                         match self.accounts_index_by_mint.entry(mint_index) {
                             dashmap::mapref::entry::Entry::Occupied(mut occ) => {
-                                occ.get_mut().push(token_index as u64);
+                                occ.get_mut().push_back(token_index);
                             }
                             dashmap::mapref::entry::Entry::Vacant(v) => {
-                                v.insert(vec![token_index as u64]);
+                                let mut q = VecDeque::new();
+                                q.push_back(token_index);
+                                v.insert(q);
                             }
                         }
 
                         // add account index in account_by_owner_pubkey map
                         match self.account_by_owner_pubkey.entry(token_account_owner) {
                             dashmap::mapref::entry::Entry::Occupied(mut occ) => {
-                                occ.get_mut().push(token_index as u64);
+                                occ.get_mut().push(token_index);
                             }
                             dashmap::mapref::entry::Entry::Vacant(v) => {
-                                v.insert(vec![token_index as u64]);
+                                v.insert(vec![token_index]);
                             }
                         }
                     }
@@ -539,7 +541,7 @@ impl InMemoryTokenStorage {
 
 #[derive(Serialize, Deserialize)]
 struct TokenProgramSnapshot {
-    pub mints: Vec<(u64, MintAccount)>,
+    pub mints: Vec<(MintIndex, MintAccount)>,
     pub multisigs: Vec<MultiSig>,
     pub token_accounts: Vec<TokenAccount>,
 }
@@ -801,7 +803,7 @@ impl AccountStorageInterface for InMemoryTokenStorage {
             self.multisigs.insert(multisig.pubkey, multisig);
         }
 
-        let mut mint_mapping = HashMap::<u64, u64>::new();
+        let mut mint_mapping = HashMap::<MintIndex, MintIndex>::new();
         // remap all the mints
         for (index, mint_account) in mints {
             match self.mints_index_by_pubkey.get_mut(&mint_account.pubkey) {
@@ -829,7 +831,7 @@ impl AccountStorageInterface for InMemoryTokenStorage {
                     *lk.get_mut(index).unwrap() = token_account;
                 }
                 None => {
-                    let index = lk.len() as u64;
+                    let index = lk.len() as MintIndex;
                     let pk = token_account.pubkey;
                     let owner = token_account.owner;
                     lk.push_back(token_account);
@@ -843,11 +845,12 @@ impl AccountStorageInterface for InMemoryTokenStorage {
 
                     match self.accounts_index_by_mint.get_mut(&new_mint_index) {
                         Some(mut accs) => {
-                            accs.push(index);
+                            accs.push_back(index);
                         }
                         None => {
-                            self.accounts_index_by_mint
-                                .insert(new_mint_index, vec![index]);
+                            let mut q = VecDeque::new();
+                            q.push_back(index);
+                            self.accounts_index_by_mint.insert(new_mint_index, q);
                         }
                     }
                 }

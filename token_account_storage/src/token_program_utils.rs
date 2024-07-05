@@ -1,7 +1,7 @@
-use std::sync::{atomic::AtomicU64, Arc};
+use std::sync::{atomic::AtomicU32, Arc};
 
 use crate::account_types::{
-    MintAccount, MultiSig, Program, TokenAccount, TokenProgramAccountState,
+    MintAccount, MintIndex, MultiSig, Program, TokenAccount, TokenProgramAccountState,
 };
 use anyhow::bail;
 use dashmap::DashMap;
@@ -38,9 +38,9 @@ impl TokenProgramAccountType {
 
 pub fn get_or_create_mint_index(
     mint: Pubkey,
-    mint_index_by_pubkey: &Arc<DashMap<Pubkey, u64>>,
-    mint_index_count: &Arc<AtomicU64>,
-) -> u64 {
+    mint_index_by_pubkey: &Arc<DashMap<Pubkey, MintIndex>>,
+    mint_index_count: &Arc<AtomicU32>,
+) -> MintIndex {
     match mint_index_by_pubkey.entry(mint) {
         dashmap::mapref::entry::Entry::Occupied(occ) => *occ.get(),
         dashmap::mapref::entry::Entry::Vacant(vac) => {
@@ -53,8 +53,8 @@ pub fn get_or_create_mint_index(
 
 pub fn get_token_program_account_type(
     account_data: &AccountData,
-    mint_index_by_pubkey: &Arc<DashMap<Pubkey, u64>>,
-    mint_index_count: &Arc<AtomicU64>,
+    mint_index_by_pubkey: &Arc<DashMap<Pubkey, MintIndex>>,
+    mint_index_count: &Arc<AtomicU32>,
 ) -> anyhow::Result<TokenProgramAccountType> {
     if account_data.account.lamports == 0
         || (account_data.account.owner != spl_token::id()
@@ -243,7 +243,7 @@ pub fn token_account_to_solana_account(
     token_account: &TokenAccount,
     updated_slot: u64,
     write_version: u64,
-    mints_by_index: &Arc<DashMap<u64, MintAccount>>,
+    mints_by_index: &Arc<DashMap<MintIndex, MintAccount>>,
 ) -> Option<AccountData> {
     if token_account.lamports == 0 {
         return None;
@@ -449,7 +449,7 @@ pub fn token_program_account_to_solana_account(
     token_program_account: &TokenProgramAccountType,
     updated_slot: u64,
     write_version: u64,
-    mints_by_index: &Arc<DashMap<u64, MintAccount>>,
+    mints_by_index: &Arc<DashMap<MintIndex, MintAccount>>,
 ) -> Option<AccountData> {
     match token_program_account {
         TokenProgramAccountType::TokenAccount(tok_acc) => {
