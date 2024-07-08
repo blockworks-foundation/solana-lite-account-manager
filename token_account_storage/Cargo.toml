@@ -22,7 +22,8 @@ serde = {workspace = true}
 anyhow = {workspace = true}
 bincode = {workspace = true}
 lz4 = {workspace = true}
-
+bitflags = {workspace = true}
+arrayref = {workspace = true}
 
 [dev-dependencies]
 rand = "0.8.5"

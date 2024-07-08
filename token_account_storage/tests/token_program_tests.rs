@@ -6,7 +6,10 @@ use lite_account_manager_common::{
     commitment::Commitment,
     slot_info::SlotInfo,
 };
-use lite_token_account_storage::inmemory_token_storage::InMemoryTokenStorage;
+use lite_token_account_storage::{
+    inmemory_token_account_storage::InmemoryTokenAccountStorage,
+    inmemory_token_storage::InMemoryTokenStorage,
+};
 use solana_sdk::pubkey::Pubkey;
 
 mod utils;
@@ -14,7 +17,8 @@ mod utils;
 #[tokio::test]
 pub async fn test_saving_and_loading_token_account() {
     tracing_subscriber::fmt::init();
-    let token_store = InMemoryTokenStorage::new();
+    let inmemory_token_storage = Arc::new(InmemoryTokenAccountStorage::default());
+    let token_store = InMemoryTokenStorage::new(inmemory_token_storage);
 
     let mint: Pubkey = Pubkey::new_unique();
     let mint_creation_params = utils::MintCreationParams::create_default(100);

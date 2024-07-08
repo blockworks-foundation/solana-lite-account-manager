@@ -1925,8 +1925,10 @@ name = "lite-token-account-storage"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "arrayref",
  "async-trait",
  "bincode",
+ "bitflags 2.6.0",
  "dashmap",
  "futures",
  "itertools",

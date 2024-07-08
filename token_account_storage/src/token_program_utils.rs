@@ -14,6 +14,7 @@ use solana_sdk::{
     program_option::COption,
     program_pack::Pack,
     pubkey::{Pubkey, PUBKEY_BYTES},
+    rent::Rent,
 };
 use spl_token::instruction::MAX_SIGNERS;
 
@@ -116,7 +117,7 @@ pub fn get_token_program_account_type(
                 );
                 Ok(TokenProgramAccountType::TokenAccount(TokenAccount {
                     program: crate::account_types::Program::Token2022Program,
-                    lamports: account_data.account.lamports,
+                    is_deleted: account_data.account.lamports > 0,
                     pubkey: account_data.pubkey,
                     mint: mint_index, // mint should be set inmemory account
                     owner: token_account.owner,
@@ -191,7 +192,7 @@ pub fn get_token_program_account_type(
             Ok(TokenProgramAccountType::TokenAccount(TokenAccount {
                 program: crate::account_types::Program::TokenProgram,
                 pubkey: account_data.pubkey,
-                lamports: account_data.account.lamports,
+                is_deleted: account_data.account.lamports > 0,
                 mint: mint_index, // mint should be set inmemory account
                 owner: token_account.owner,
                 amount: token_account.amount,
@@ -245,7 +246,7 @@ pub fn token_account_to_solana_account(
     write_version: u64,
     mints_by_index: &Arc<DashMap<MintIndex, MintAccount>>,
 ) -> Option<AccountData> {
-    if token_account.lamports == 0 {
+    if token_account.is_deleted {
         return None;
     }
     let (delegate, delegated_amount) = token_account.delegate.unwrap_or_default();
@@ -311,8 +312,13 @@ pub fn token_account_to_solana_account(
         }
     };
     let data_length = data.len() as u64;
+    let rent = Rent::default();
     let account = Arc::new(Account {
-        lamports: token_account.lamports,
+        lamports: if token_account.is_deleted {
+            0
+        } else {
+            rent.minimum_balance(data_length as usize)
+        },
         data: lite_account_manager_common::account_data::Data::Uncompressed(data),
         owner: match token_account.program {
             Program::TokenProgram => spl_token::id(),

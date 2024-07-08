@@ -1,4 +1,9 @@
-use lite_token_account_storage::inmemory_token_storage::InMemoryTokenStorage;
+use std::sync::Arc;
+
+use lite_token_account_storage::{
+    inmemory_token_account_storage::InmemoryTokenAccountStorage,
+    inmemory_token_storage::InMemoryTokenStorage,
+};
 use solana_sdk::pubkey::Pubkey;
 mod utils;
 
@@ -10,7 +15,8 @@ use lite_account_manager_common::{
 
 #[tokio::test]
 pub async fn test_gpa_token_account() {
-    let token_store = InMemoryTokenStorage::new();
+    let inmemory_token_storage = Arc::new(InmemoryTokenAccountStorage::default());
+    let token_store = InMemoryTokenStorage::new(inmemory_token_storage);
 
     let mint_1: Pubkey = Pubkey::new_unique();
     let mint_creation_params = utils::MintCreationParams::create_default(100);

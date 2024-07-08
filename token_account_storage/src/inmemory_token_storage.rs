@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap, VecDeque},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     sync::{
         atomic::{AtomicU32, AtomicU64, Ordering},
         Arc,
@@ -22,6 +22,7 @@ use tokio::sync::RwLock;
 
 use crate::{
     account_types::{MintAccount, MintIndex, MultiSig, Program, TokenAccount, TokenAccountIndex},
+    token_account_storage_interface::TokenAccountStorageInterface,
     token_program_utils::{
         get_spl_token_owner_mint_filter, get_token_program_account_type,
         token_account_to_solana_account, token_mint_to_solana_account,
@@ -293,9 +294,8 @@ pub struct InMemoryTokenStorage {
     mints_index_by_pubkey: Arc<DashMap<Pubkey, MintIndex>>,
     multisigs: Arc<DashMap<Pubkey, MultiSig>>,
     accounts_index_by_mint: Arc<DashMap<MintIndex, VecDeque<TokenAccountIndex>>>,
-    account_index_by_pubkey: Arc<DashMap<Pubkey, TokenAccountIndex>>,
     account_by_owner_pubkey: Arc<DashMap<Pubkey, Vec<TokenAccountIndex>>>,
-    token_accounts: Arc<RwLock<VecDeque<TokenAccount>>>,
+    token_accounts_storage: Arc<dyn TokenAccountStorageInterface>,
     processed_storage: ProcessedAccountStore,
     confirmed_slot: Arc<AtomicU64>,
     finalized_slot: Arc<AtomicU64>,
@@ -304,15 +304,14 @@ pub struct InMemoryTokenStorage {
 
 impl InMemoryTokenStorage {
     #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
+    pub fn new(token_accounts_storage: Arc<dyn TokenAccountStorageInterface>) -> Self {
         Self {
             mints_by_index: Arc::new(DashMap::new()),
             mints_index_by_pubkey: Arc::new(DashMap::new()),
             accounts_index_by_mint: Arc::new(DashMap::new()),
             multisigs: Arc::new(DashMap::new()),
-            account_index_by_pubkey: Arc::new(DashMap::new()),
             account_by_owner_pubkey: Arc::new(DashMap::new()),
-            token_accounts: Arc::new(RwLock::new(VecDeque::new())),
+            token_accounts_storage,
             processed_storage: ProcessedAccountStore::default(),
             confirmed_slot: Arc::new(AtomicU64::new(0)),
             finalized_slot: Arc::new(AtomicU64::new(0)),
@@ -326,46 +325,34 @@ impl InMemoryTokenStorage {
             TokenProgramAccountType::TokenAccount(token_account) => {
                 let token_account_owner = token_account.owner;
                 let mint_index = token_account.mint;
-                // find if the token account is already present
-                match self.account_index_by_pubkey.entry(token_account.pubkey) {
-                    dashmap::mapref::entry::Entry::Occupied(occ) => {
-                        // already present
-                        let token_index = *occ.get() as usize;
-                        let mut write_lk = self.token_accounts.write().await;
-                        // update existing token account
-                        *write_lk.get_mut(token_index).unwrap() = token_account;
-                    }
-                    dashmap::mapref::entry::Entry::Vacant(v) => {
-                        // add new token account
-                        let mut write_lk = self.token_accounts.write().await;
-                        let token_index = write_lk.len() as TokenAccountIndex;
-                        write_lk.push_back(token_account);
-                        v.insert(token_index as TokenAccountIndex);
-                        drop(write_lk);
-
-                        // add account index in accounts_index_by_mint map
-                        match self.accounts_index_by_mint.entry(mint_index) {
-                            dashmap::mapref::entry::Entry::Occupied(mut occ) => {
-                                occ.get_mut().push_back(token_index);
-                            }
-                            dashmap::mapref::entry::Entry::Vacant(v) => {
-                                let mut q = VecDeque::new();
-                                q.push_back(token_index);
-                                v.insert(q);
-                            }
+                let (token_index, is_added) = self
+                    .token_accounts_storage
+                    .save_or_update(token_account)
+                    .await;
+                if is_added {
+                    // add account to the indexes
+                    // add account index in accounts_index_by_mint map
+                    match self.accounts_index_by_mint.entry(mint_index) {
+                        dashmap::mapref::entry::Entry::Occupied(mut occ) => {
+                            occ.get_mut().push_back(token_index);
                         }
-
-                        // add account index in account_by_owner_pubkey map
-                        match self.account_by_owner_pubkey.entry(token_account_owner) {
-                            dashmap::mapref::entry::Entry::Occupied(mut occ) => {
-                                occ.get_mut().push(token_index);
-                            }
-                            dashmap::mapref::entry::Entry::Vacant(v) => {
-                                v.insert(vec![token_index]);
-                            }
+                        dashmap::mapref::entry::Entry::Vacant(v) => {
+                            let mut q = VecDeque::new();
+                            q.push_back(token_index);
+                            v.insert(q);
                         }
                     }
-                };
+
+                    // add account index in account_by_owner_pubkey map
+                    match self.account_by_owner_pubkey.entry(token_account_owner) {
+                        dashmap::mapref::entry::Entry::Occupied(mut occ) => {
+                            occ.get_mut().push(token_index);
+                        }
+                        dashmap::mapref::entry::Entry::Vacant(v) => {
+                            v.insert(vec![token_index]);
+                        }
+                    }
+                }
             }
             TokenProgramAccountType::Mint(mint_data) => {
                 match self.mints_index_by_pubkey.entry(mint_data.pubkey) {
@@ -390,28 +377,25 @@ impl InMemoryTokenStorage {
                     self.accounts_index_by_mint.remove(&index);
                 } else if self.mints_index_by_pubkey.remove(&account_pk).is_some() {
                     // do nothing multisig account is removed
-                } else if let Some((_, index)) = self.account_index_by_pubkey.remove(&account_pk) {
-                    let mut lk = self.token_accounts.write().await;
-                    if let Some(token_account) = lk.get_mut(index as usize) {
-                        token_account.lamports = 0;
-                        token_account.mint = 0;
-                        token_account.owner = Pubkey::default();
-                    }
+                } else {
+                    self.token_accounts_storage.delete(&account_pk).await;
                 }
             }
         }
         true
     }
 
-    pub fn is_token_program_account(&self, account_data: &AccountData) -> bool {
-        self.account_index_by_pubkey
+    pub async fn is_token_program_account(&self, account_data: &AccountData) -> bool {
+        self.mints_index_by_pubkey
             .contains_key(&account_data.pubkey)
-            || self
-                .mints_index_by_pubkey
-                .contains_key(&account_data.pubkey)
             || self.multisigs.contains_key(&account_data.pubkey)
             || account_data.account.owner == spl_token::id()
             || account_data.account.owner == spl_token_2022::id()
+            || self
+                .token_accounts_storage
+                .contains(&account_data.pubkey)
+                .await
+                .is_some()
     }
 
     pub async fn get_account_finalized(&self, account_pk: Pubkey) -> Option<AccountData> {
@@ -433,15 +417,12 @@ impl InMemoryTokenStorage {
             ));
         }
 
-        if let Some(ite) = self.account_index_by_pubkey.get(&account_pk) {
-            let token_account_index = *ite as usize;
-            let lk = self.token_accounts.read().await;
-            let token_account = lk.get(token_account_index).unwrap();
-            if token_account.lamports == 0 {
+        if let Some(token_account) = self.token_accounts_storage.get_by_pubkey(&account_pk).await {
+            if token_account.is_deleted {
                 return None;
             }
             return token_account_to_solana_account(
-                token_account,
+                &token_account,
                 self.finalized_slot.load(Ordering::Relaxed),
                 0,
                 &self.mints_by_index,
@@ -462,13 +443,18 @@ impl InMemoryTokenStorage {
             if let Some(owner) = owner {
                 match self.account_by_owner_pubkey.get(&owner) {
                     Some(token_acc_indexes) => {
-                        let lk = self.token_accounts.read().await;
-                        let indexes = token_acc_indexes.value();
+                        let indexes = token_acc_indexes
+                            .value()
+                            .iter()
+                            .cloned()
+                            .collect::<HashSet<_>>();
                         let mint =
                             mint.map(|pk| *self.mints_index_by_pubkey.get(&pk).unwrap().value());
-                        let token_accounts = indexes
+                        let token_accounts = self
+                            .token_accounts_storage
+                            .get_by_index(indexes)
+                            .await?
                             .iter()
-                            .filter_map(|index| lk.get(*index as usize))
                             .filter(|acc| {
                                 // filter by mint if necessary
                                 if let Some(mint) = mint {
@@ -495,11 +481,16 @@ impl InMemoryTokenStorage {
                 match self.mints_index_by_pubkey.get(&mint) {
                     Some(mint_index) => match self.accounts_index_by_mint.get(mint_index.value()) {
                         Some(token_acc_indexes) => {
-                            let indexes = token_acc_indexes.value();
-                            let lk = self.token_accounts.read().await;
-                            let token_accounts = indexes
+                            let indexes = token_acc_indexes
+                                .value()
                                 .iter()
-                                .filter_map(|index| lk.get(*index as usize))
+                                .cloned()
+                                .collect::<HashSet<u32>>();
+                            let token_accounts = self
+                                .token_accounts_storage
+                                .get_by_index(indexes)
+                                .await?
+                                .iter()
                                 .filter_map(|token_account| {
                                     token_account_to_solana_account(
                                         token_account,
@@ -543,13 +534,13 @@ impl InMemoryTokenStorage {
 struct TokenProgramSnapshot {
     pub mints: Vec<(MintIndex, MintAccount)>,
     pub multisigs: Vec<MultiSig>,
-    pub token_accounts: Vec<TokenAccount>,
+    pub token_accounts: Vec<Vec<u8>>,
 }
 
 #[async_trait]
 impl AccountStorageInterface for InMemoryTokenStorage {
     async fn update_account(&self, account_data: AccountData, commitment: Commitment) -> bool {
-        if !self.is_token_program_account(&account_data) {
+        if !self.is_token_program_account(&account_data).await {
             return false;
         }
 
@@ -584,7 +575,7 @@ impl AccountStorageInterface for InMemoryTokenStorage {
     }
 
     async fn initilize_or_update_account(&self, account_data: AccountData) {
-        if !self.is_token_program_account(&account_data) {
+        if !self.is_token_program_account(&account_data).await {
             return;
         }
 
@@ -759,14 +750,7 @@ impl AccountStorageInterface for InMemoryTokenStorage {
             .collect_vec();
 
         let multisigs = self.multisigs.iter().map(|ite| ite.clone()).collect_vec();
-        let token_accounts = self
-            .token_accounts
-            .read()
-            .await
-            .iter()
-            .filter(|x| x.program == program && x.lamports > 0)
-            .cloned()
-            .collect_vec();
+        let token_accounts = self.token_accounts_storage.create_snapshot(program).await?;
 
         let snapshot = TokenProgramSnapshot {
             mints,
@@ -819,39 +803,32 @@ impl AccountStorageInterface for InMemoryTokenStorage {
             }
         }
 
-        let mut lk = self.token_accounts.write().await;
-        for mut token_account in token_accounts {
+        for token_account_bytes in token_accounts {
             // use the new mint index
+            let mut token_account = TokenAccount::from_bytes(&token_account_bytes);
             let new_mint_index = *mint_mapping.get(&token_account.mint).unwrap();
             token_account.mint = new_mint_index;
-            match self.account_index_by_pubkey.get(&token_account.pubkey) {
-                Some(exists) => {
-                    // pubkey is already present, replace existing
-                    let index = *exists as usize;
-                    *lk.get_mut(index).unwrap() = token_account;
-                }
-                None => {
-                    let index = lk.len() as MintIndex;
-                    let pk = token_account.pubkey;
-                    let owner = token_account.owner;
-                    lk.push_back(token_account);
-                    self.account_index_by_pubkey.insert(pk, index);
-                    match self.account_by_owner_pubkey.get_mut(&owner) {
-                        Some(mut accs) => accs.push(index),
-                        None => {
-                            self.account_by_owner_pubkey.insert(owner, vec![index]);
-                        }
+            let owner = token_account.owner;
+            let (index, is_added) = self
+                .token_accounts_storage
+                .save_or_update(token_account)
+                .await;
+            if is_added {
+                match self.account_by_owner_pubkey.get_mut(&owner) {
+                    Some(mut accs) => accs.push(index),
+                    None => {
+                        self.account_by_owner_pubkey.insert(owner, vec![index]);
                     }
+                }
 
-                    match self.accounts_index_by_mint.get_mut(&new_mint_index) {
-                        Some(mut accs) => {
-                            accs.push_back(index);
-                        }
-                        None => {
-                            let mut q = VecDeque::new();
-                            q.push_back(index);
-                            self.accounts_index_by_mint.insert(new_mint_index, q);
-                        }
+                match self.accounts_index_by_mint.get_mut(&new_mint_index) {
+                    Some(mut accs) => {
+                        accs.push_back(index);
+                    }
+                    None => {
+                        let mut q = VecDeque::new();
+                        q.push_back(index);
+                        self.accounts_index_by_mint.insert(new_mint_index, q);
                     }
                 }
             }
