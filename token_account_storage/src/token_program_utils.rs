@@ -117,7 +117,7 @@ pub fn get_token_program_account_type(
                 );
                 Ok(TokenProgramAccountType::TokenAccount(TokenAccount {
                     program: crate::account_types::Program::Token2022Program,
-                    is_deleted: account_data.account.lamports > 0,
+                    is_deleted: account_data.account.lamports == 0,
                     pubkey: account_data.pubkey,
                     mint: mint_index, // mint should be set inmemory account
                     owner: token_account.owner,
@@ -192,7 +192,7 @@ pub fn get_token_program_account_type(
             Ok(TokenProgramAccountType::TokenAccount(TokenAccount {
                 program: crate::account_types::Program::TokenProgram,
                 pubkey: account_data.pubkey,
-                is_deleted: account_data.account.lamports > 0,
+                is_deleted: account_data.account.lamports == 0,
                 mint: mint_index, // mint should be set inmemory account
                 owner: token_account.owner,
                 amount: token_account.amount,

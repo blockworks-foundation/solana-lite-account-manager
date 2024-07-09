@@ -54,11 +54,12 @@ impl TokenAccountStorageInterface for InmemoryTokenAccountStorage {
         indexes: HashSet<TokenAccountIndex>,
     ) -> Result<Vec<TokenAccount>, AccountLoadingError> {
         let lk = self.token_accounts.read().await;
-        Ok(indexes
+        let accounts = indexes
             .iter()
             .filter_map(|index| lk.get(*index as usize))
             .map(|x| TokenAccount::from_bytes(x))
-            .collect_vec())
+            .collect_vec();
+        Ok(accounts)
     }
 
     async fn get_by_pubkey(&self, pubkey: &Pubkey) -> Option<TokenAccount> {

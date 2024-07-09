@@ -116,7 +116,7 @@ pub fn create_token_account_data(
     AccountData {
         pubkey,
         account: Arc::new(Account {
-            lamports: 1000,
+            lamports: 2039280,
             data: lite_account_manager_common::account_data::Data::Uncompressed(
                 create_token_account(token_creation_params),
             ),

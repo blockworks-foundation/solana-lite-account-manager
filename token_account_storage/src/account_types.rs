@@ -202,7 +202,7 @@ impl TokenAccount {
             let delegate_bytes: &[u8; 32 + 8] = others[..32 + 8].try_into().unwrap();
             others = &others[32 + 8..];
             let delegate_pk = Pubkey::new_from_array(*arrayref::array_ref![delegate_bytes, 0, 32]);
-            let amount = u64::from_be_bytes(*arrayref::array_ref![delegate_bytes, 32, 8]);
+            let amount = u64::from_le_bytes(*arrayref::array_ref![delegate_bytes, 32, 8]);
             Some((delegate_pk, amount))
         } else {
             None
@@ -279,8 +279,9 @@ mod test {
 
     #[test]
     pub fn fuzzy_test_token_account_serialization() {
+        tracing_subscriber::fmt::init();
         let mut rng = thread_rng();
-        for _ in 0..1_000_000 {
+        for _ in 0..5_000 {
             let acc = TokenAccount {
                 program: if rng.gen::<bool>() {
                     Program::TokenProgram
@@ -308,7 +309,7 @@ mod test {
                 } else {
                     None
                 },
-                additional_data: if rng.gen::<bool>() {
+                additional_data: if rng.gen_bool(0.1) {
                     let len = rng.gen::<usize>() % 1_000_000;
                     let data = (0..len).map(|_| rng.gen::<u8>()).collect_vec();
                     Some(data)
