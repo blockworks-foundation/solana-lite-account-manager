@@ -14,6 +14,7 @@ use lite_account_manager_common::{
     account_filter::AccountFilterType,
     account_store_interface::{AccountLoadingError, AccountStorageInterface},
     commitment::Commitment,
+    pubkey_container_utils::PartialPubkey,
     slot_info::SlotInfo,
 };
 use serde::{Deserialize, Serialize};
@@ -31,6 +32,8 @@ use crate::{
     },
 };
 
+const PARTIAL_PUBKEY_SIZE: usize = 6;
+type InmemoryPubkey = PartialPubkey<PARTIAL_PUBKEY_SIZE>;
 #[derive(Clone)]
 struct ProcessedAccount {
     pub processed_account: TokenProgramAccountType,
@@ -294,7 +297,7 @@ pub struct InMemoryTokenStorage {
     mints_index_by_pubkey: Arc<DashMap<Pubkey, MintIndex>>,
     multisigs: Arc<DashMap<Pubkey, MultiSig>>,
     accounts_index_by_mint: Arc<DashMap<MintIndex, VecDeque<TokenAccountIndex>>>,
-    account_by_owner_pubkey: Arc<DashMap<Pubkey, Vec<TokenAccountIndex>>>,
+    account_by_owner_pubkey: Arc<DashMap<InmemoryPubkey, Vec<TokenAccountIndex>>>,
     token_accounts_storage: Arc<dyn TokenAccountStorageInterface>,
     processed_storage: ProcessedAccountStore,
     confirmed_slot: Arc<AtomicU64>,
@@ -344,7 +347,10 @@ impl InMemoryTokenStorage {
                     }
 
                     // add account index in account_by_owner_pubkey map
-                    match self.account_by_owner_pubkey.entry(token_account_owner) {
+                    match self
+                        .account_by_owner_pubkey
+                        .entry(token_account_owner.into())
+                    {
                         dashmap::mapref::entry::Entry::Occupied(mut occ) => {
                             occ.get_mut().push(token_index);
                         }
@@ -441,7 +447,7 @@ impl InMemoryTokenStorage {
         if let Some(account_filters) = account_filters {
             let (owner, mint) = get_spl_token_owner_mint_filter(&program_pubkey, &account_filters);
             if let Some(owner) = owner {
-                match self.account_by_owner_pubkey.get(&owner) {
+                match self.account_by_owner_pubkey.get(&owner.into()) {
                     Some(token_acc_indexes) => {
                         let indexes = token_acc_indexes
                             .value()
@@ -458,9 +464,9 @@ impl InMemoryTokenStorage {
                             .filter(|acc| {
                                 // filter by mint if necessary
                                 if let Some(mint) = mint {
-                                    acc.mint == mint
+                                    acc.mint == mint && acc.owner == owner
                                 } else {
-                                    true
+                                    acc.owner == owner
                                 }
                             })
                             .filter_map(|token_account| {
@@ -814,10 +820,11 @@ impl AccountStorageInterface for InMemoryTokenStorage {
                 .save_or_update(token_account)
                 .await;
             if is_added {
-                match self.account_by_owner_pubkey.get_mut(&owner) {
+                match self.account_by_owner_pubkey.get_mut(&owner.into()) {
                     Some(mut accs) => accs.push(index),
                     None => {
-                        self.account_by_owner_pubkey.insert(owner, vec![index]);
+                        self.account_by_owner_pubkey
+                            .insert(owner.into(), vec![index]);
                     }
                 }
 

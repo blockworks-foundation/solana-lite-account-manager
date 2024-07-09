@@ -249,6 +249,21 @@ impl TokenAccount {
             additional_data,
         }
     }
+
+    pub fn get_pubkey_from_binary(binary: &[u8]) -> Pubkey {
+        let pubkey_array: [u8; 32] = binary[2..34].try_into().unwrap();
+        Pubkey::new_from_array(pubkey_array)
+    }
+
+    pub fn get_owner_from_binary(binary: &[u8]) -> Pubkey {
+        let pubkey_array: [u8; 32] = binary[34..66].try_into().unwrap();
+        Pubkey::new_from_array(pubkey_array)
+    }
+
+    pub fn get_mint_index_from_binary(binary: &[u8]) -> u32 {
+        let bytes: [u8; 4] = binary[66..66 + 4].try_into().unwrap();
+        u32::from_le_bytes(bytes)
+    }
 }
 
 #[cfg(test)]
@@ -317,8 +332,11 @@ mod test {
                     None
                 },
             };
-
             let ser = acc.to_bytes();
+
+            assert_eq!(TokenAccount::get_pubkey_from_binary(&ser), acc.pubkey);
+            assert_eq!(TokenAccount::get_owner_from_binary(&ser), acc.owner);
+            assert_eq!(TokenAccount::get_mint_index_from_binary(&ser), acc.mint);
             let deser = TokenAccount::from_bytes(&ser);
             assert_eq!(deser, acc);
         }
