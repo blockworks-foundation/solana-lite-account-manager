@@ -1,4 +1,7 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use crate::account_data_by_commitment::AccountDataByCommitment;
 use async_trait::async_trait;
@@ -30,6 +33,7 @@ lazy_static::lazy_static! {
 struct SlotStatus {
     pub commitment: Commitment,
     pub accounts_updated: HashSet<Pubkey>,
+    pub parent: Option<Slot>,
 }
 
 pub struct InmemoryAccountStore {
@@ -117,6 +121,7 @@ impl InmemoryAccountStore {
                     SlotStatus {
                         commitment,
                         accounts_updated: HashSet::new(),
+                        parent: None,
                     },
                 );
                 lk.get_mut(&slot).unwrap()
@@ -291,6 +296,65 @@ impl AccountStorageInterface for InmemoryAccountStore {
         let slot = slot_info.slot;
         let writable_accounts = {
             let mut lk = self.slots_status.lock().await;
+            let mut current_slot = Some((slot, Some(slot_info.parent)));
+            let mut writable_accounts: HashMap<Pubkey, Slot> = HashMap::new();
+            while let Some((slot, parent)) = current_slot {
+                match lk.get_mut(&slot) {
+                    Some(status) => {
+                        current_slot = None;
+                        if status.commitment == commitment {
+                            // slot already processed for the commitment
+                            break;
+                        }
+                        status.commitment = commitment;
+                        if parent.is_some() {
+                            status.parent = parent;
+                        }
+                        for account in &status.accounts_updated {
+                            match writable_accounts.entry(*account) {
+                                std::collections::hash_map::Entry::Occupied(_) => {
+                                    // do nothing account has already been updated by higher slot
+                                }
+                                std::collections::hash_map::Entry::Vacant(vac) => {
+                                    vac.insert(slot);
+                                }
+                            }
+                        }
+                        if commitment == Commitment::Confirmed
+                            || commitment == Commitment::Finalized
+                        {
+                            if let Some(parent_slot) = status.parent {
+                                // update commitment for parent slots
+                                current_slot = Some((parent_slot, None));
+                            }
+                        }
+                    }
+                    None => {
+                        if commitment == Commitment::Confirmed {
+                            log::debug!(
+                                "slot status not found for {} and commitment {}, confirmed lagging",
+                                slot,
+                                commitment
+                            );
+                        } else if commitment == Commitment::Finalized {
+                            log::debug!("slot status not found for {} for commitment finalized, could be normal if the entry is already removed or during startup", slot,);
+                        }
+                        if commitment == Commitment::Confirmed
+                            || commitment == Commitment::Processed
+                        {
+                            // add status for processed slot
+                            let status = SlotStatus {
+                                commitment,
+                                accounts_updated: HashSet::new(),
+                                parent: Some(slot_info.parent),
+                            };
+                            lk.insert(slot, status);
+                        }
+                        break;
+                    }
+                }
+            }
+
             // remove old slot status if finalized
             if commitment == Commitment::Finalized {
                 while let Some(entry) = lk.first_entry() {
@@ -302,38 +366,17 @@ impl AccountStorageInterface for InmemoryAccountStore {
                     }
                 }
             }
-            match lk.get_mut(&slot) {
-                Some(status) => {
-                    status.commitment = commitment;
-                    status.accounts_updated.clone()
-                }
-                None => {
-                    if commitment == Commitment::Confirmed {
-                        log::debug!(
-                            "slot status not found for {} and commitment {}, confirmed lagging",
-                            slot,
-                            commitment
-                        );
-                    } else if commitment == Commitment::Finalized {
-                        log::debug!("slot status not found for {} for commitment finalized, could be normal if the entry is already removed or during startup", slot,);
-                    }
-                    let status = SlotStatus {
-                        commitment,
-                        accounts_updated: HashSet::new(),
-                    };
-                    lk.insert(slot, status);
-                    HashSet::new()
-                }
-            }
+
+            writable_accounts
         };
 
         let mut updated_accounts = vec![];
-        for writable_account in writable_accounts {
+        for (writable_account, update_slot) in writable_accounts {
             match self.account_store.entry(writable_account) {
                 dashmap::mapref::entry::Entry::Occupied(mut occ) => {
                     if let Some((account_data, prev_account_data)) = occ
                         .get_mut()
-                        .promote_slot_commitment(writable_account, slot, commitment)
+                        .promote_slot_commitment(writable_account, update_slot, commitment)
                     {
                         if let Some(prev_account_data) = prev_account_data {
                             // check if owner has changed
