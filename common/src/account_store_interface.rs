@@ -20,6 +20,14 @@ pub enum AccountLoadingError {
     CompressionIssues,
 }
 
+impl std::fmt::Display for AccountLoadingError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "AccountLoadingError : {:?}", *self)
+    }
+}
+
+impl std::error::Error for AccountLoadingError {}
+
 #[async_trait]
 pub trait AccountStorageInterface: Send + Sync {
     // Update account and return true if the account was sucessfylly updated
