@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::Arc,
     time::Duration,
 };
@@ -111,18 +111,20 @@ impl AccountStorageInterface for AccountsOnDemand {
                             // create a notify for accounts under loading
                             lk.insert(account_pk, Arc::new(Notify::new()));
                             log::debug!("subscribing to accounts update : {}", account_pk);
+                            let mut hash_set = HashSet::new();
+                            hash_set.insert(account_pk);
                             self.accounts_source
-                                .subscribe_account(account_pk)
+                                .subscribe_accounts(hash_set)
                                 .await
                                 .map_err(|_| AccountLoadingError::ErrorSubscribingAccount)?;
                             drop(lk);
 
                             // save snapshot
-                            let account_filter = AccountFilter {
+                            let account_filter = vec![AccountFilter {
                                 accounts: vec![account_pk],
                                 program_id: None,
                                 filters: None,
-                            };
+                            }];
                             self.accounts_source
                                 .save_snapshot(self.accounts_storage.clone(), account_filter)
                                 .await
@@ -204,7 +206,7 @@ impl AccountStorageInterface for AccountsOnDemand {
                         .await;
 
                     self.accounts_source
-                        .save_snapshot(self.accounts_storage.clone(), account_filter)
+                        .save_snapshot(self.accounts_storage.clone(), vec![account_filter])
                         .await
                         .map_err(|_| AccountLoadingError::ErrorCreatingSnapshot)?;
                     // update loading lock

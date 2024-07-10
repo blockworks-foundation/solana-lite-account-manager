@@ -1,15 +1,15 @@
 use crate::{
-    account_filter::{AccountFilter, AccountFilterType},
+    account_filter::{AccountFilterType, AccountFilters},
     account_store_interface::AccountStorageInterface,
 };
 use async_trait::async_trait;
 use solana_sdk::pubkey::Pubkey;
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 // Source to create snapshot and subscribe to new accounts
 #[async_trait]
 pub trait AccountsSourceInterface: Send + Sync {
-    async fn subscribe_account(&self, account: Pubkey) -> anyhow::Result<()>;
+    async fn subscribe_accounts(&self, account: HashSet<Pubkey>) -> anyhow::Result<()>;
 
     async fn subscribe_program_accounts(
         &self,
@@ -20,6 +20,6 @@ pub trait AccountsSourceInterface: Send + Sync {
     async fn save_snapshot(
         &self,
         storage: Arc<dyn AccountStorageInterface>,
-        account_filter: AccountFilter,
+        account_filters: AccountFilters,
     ) -> anyhow::Result<()>;
 }
