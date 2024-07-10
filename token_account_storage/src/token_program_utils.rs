@@ -67,16 +67,16 @@ pub fn get_token_program_account_type(
 
     if account_data.account.owner == spl_token_2022::ID {
         let data = account_data.account.data.data();
-        let (type_account, additional_data) = if account_data.account.data_length == 82 {
+        let (type_account, additional_data) = if account_data.account.data.len() == 82 {
             //mint
             (0, false)
-        } else if account_data.account.data_length == 165 {
+        } else if account_data.account.data.len() == 165 {
             // token account
             (1, false)
-        } else if account_data.account.data_length == 355 {
+        } else if account_data.account.data.len() == 355 {
             // multisig
             (2, false)
-        } else if account_data.account.data_length > 165 {
+        } else if account_data.account.data.len() > 165 {
             // extended token account
             if data[165] == 1 {
                 //mint
@@ -166,7 +166,7 @@ pub fn get_token_program_account_type(
             _ => unreachable!(),
         }
     } else if account_data.account.owner == spl_token::ID {
-        if account_data.account.data_length == 82 {
+        if account_data.account.data.len() == 82 {
             // mint
             let mint = spl_token::state::Mint::unpack(&account_data.account.data.data())?;
             Ok(TokenProgramAccountType::Mint(MintAccount {
@@ -180,7 +180,7 @@ pub fn get_token_program_account_type(
                 freeze_authority: mint.freeze_authority.into(),
                 additional_data: None,
             }))
-        } else if account_data.account.data_length == 165 {
+        } else if account_data.account.data.len() == 165 {
             //token account
             let token_account =
                 spl_token::state::Account::unpack(&account_data.account.data.data())?;
@@ -215,7 +215,7 @@ pub fn get_token_program_account_type(
             }))
         } else {
             // multisig
-            assert_eq!(account_data.account.data_length, 355);
+            assert_eq!(account_data.account.data.len(), 355);
             let multi_sig = spl_token::state::Multisig::unpack(&account_data.account.data.data())?;
             Ok(TokenProgramAccountType::MultiSig(
                 MultiSig {
@@ -326,7 +326,6 @@ pub fn token_account_to_solana_account(
         },
         executable: false,
         rent_epoch: u64::MAX,
-        data_length,
     });
     Some(AccountData {
         pubkey: token_account.pubkey,
@@ -377,7 +376,6 @@ pub fn token_mint_to_solana_account(
         }
     };
 
-    let data_length = data.len() as u64;
     let account = Arc::new(Account {
         lamports: mint_account.lamports,
         data: lite_account_manager_common::account_data::Data::Uncompressed(data),
@@ -387,7 +385,6 @@ pub fn token_mint_to_solana_account(
         },
         executable: false,
         rent_epoch: u64::MAX,
-        data_length,
     });
     AccountData {
         pubkey: mint_account.pubkey,
@@ -431,7 +428,6 @@ pub fn token_multisig_to_solana_account(
             data
         }
     };
-    let data_length = data.len() as u64;
     let account = Arc::new(Account {
         lamports: multsig.lamports,
         data: lite_account_manager_common::account_data::Data::Uncompressed(data),
@@ -441,7 +437,6 @@ pub fn token_multisig_to_solana_account(
         },
         executable: false,
         rent_epoch: u64::MAX,
-        data_length,
     });
     AccountData {
         pubkey,

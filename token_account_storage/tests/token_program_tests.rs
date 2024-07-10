@@ -387,7 +387,6 @@ pub async fn test_saving_and_loading_token_account() {
             owner: Pubkey::default(),
             executable: false,
             rent_epoch: u64::MAX,
-            data_length: 0,
         }),
         updated_slot: 6,
         write_version: 6,
