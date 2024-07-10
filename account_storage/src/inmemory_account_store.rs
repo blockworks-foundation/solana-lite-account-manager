@@ -12,6 +12,7 @@ use lite_account_manager_common::{
     account_filters_interface::AccountFiltersStoreInterface,
     account_store_interface::{AccountLoadingError, AccountStorageInterface},
     commitment::Commitment,
+    pubkey_container_utils::PartialPubkey,
     slot_info::SlotInfo,
 };
 use prometheus::{opts, register_int_gauge, IntGauge};
@@ -37,7 +38,7 @@ struct SlotStatus {
 }
 
 pub struct InmemoryAccountStore {
-    account_store: Arc<DashMap<Pubkey, AccountDataByCommitment>>,
+    account_store: Arc<DashMap<PartialPubkey<8>, Vec<AccountDataByCommitment>>>,
     accounts_by_owner: Arc<DashMap<Pubkey, HashSet<Pubkey>>>,
     slots_status: Arc<Mutex<BTreeMap<Slot, SlotStatus>>>,
     filtered_accounts: Arc<dyn AccountFiltersStoreInterface>,
@@ -144,6 +145,14 @@ impl InmemoryAccountStore {
     pub fn is_deleted(account: &AccountData) -> bool {
         account.account.lamports == 0
     }
+
+    pub fn account_store_contains_key(&self, pubkey: &Pubkey) -> bool {
+        if let Some(accs) = self.account_store.get(&pubkey.into()) {
+            accs.iter().any(|x| x.pubkey == *pubkey)
+        } else {
+            false
+        }
+    }
 }
 
 #[async_trait]
@@ -153,8 +162,8 @@ impl AccountStorageInterface for InmemoryAccountStore {
 
         // account is neither deleted, nor tracked, not satifying any filters
         if !Self::is_deleted(&account_data)
-            && !self.account_store.contains_key(&account_data.pubkey)
             && !self.satisfies_filters(&account_data).await
+            && !self.account_store_contains_key(&account_data.pubkey)
         {
             return false;
         }
@@ -164,37 +173,43 @@ impl AccountStorageInterface for InmemoryAccountStore {
             .maybe_update_slot_status(&account_data, commitment)
             .await;
 
-        match self.account_store.entry(account_data.pubkey) {
+        match self.account_store.entry(account_data.pubkey.into()) {
             dashmap::mapref::entry::Entry::Occupied(mut occ) => {
-                let prev_account = occ.get().get_account_data(commitment);
+                let account_datas = occ.get_mut();
 
-                // if account has been updated
-                if occ.get_mut().update(account_data.clone(), commitment) {
-                    if let Some(prev_account) = prev_account {
-                        if self
-                            .update_owner_delete_if_necessary(
-                                &prev_account,
-                                &account_data,
-                                commitment,
-                            )
-                            .await
-                        {
-                            occ.remove_entry();
+                for account_data_in_store in account_datas {
+                    if account_data.pubkey == account_data_in_store.pubkey {
+                        let prev_account = account_data_in_store.get_account_data(commitment);
+                        // if account has been updated
+                        if account_data_in_store.update(account_data.clone(), commitment) {
+                            if let Some(prev_account) = prev_account {
+                                if self
+                                    .update_owner_delete_if_necessary(
+                                        &prev_account,
+                                        &account_data,
+                                        commitment,
+                                    )
+                                    .await
+                                {
+                                    occ.remove_entry();
+                                }
+                            }
+                            return true;
+                        } else {
+                            return false;
                         }
                     }
-                    true
-                } else {
-                    false
                 }
+                false
             }
             dashmap::mapref::entry::Entry::Vacant(vac) => {
                 if self.satisfies_filters(&account_data).await {
                     ACCOUNT_STORED_IN_MEMORY.inc();
                     self.add_account_owner(account_data.pubkey, account_data.account.owner);
-                    vac.insert(AccountDataByCommitment::new(
+                    vac.insert(vec![AccountDataByCommitment::new(
                         account_data.clone(),
                         commitment,
-                    ));
+                    )]);
                     true
                 } else {
                     false
@@ -206,19 +221,27 @@ impl AccountStorageInterface for InmemoryAccountStore {
     async fn initilize_or_update_account(&self, account_data: AccountData) {
         self.maybe_update_slot_status(&account_data, Commitment::Finalized)
             .await;
-        match self.account_store.contains_key(&account_data.pubkey) {
-            true => {
-                // account has already been filled by an event
-                self.update_account(account_data, Commitment::Finalized)
-                    .await;
-            }
-            false => {
+
+        match self.account_store.entry(account_data.pubkey.into()) {
+            dashmap::mapref::entry::Entry::Occupied(mut occ) => {
+                {
+                    for acc in occ.get_mut() {
+                        if acc.pubkey == account_data.pubkey {
+                            self.update_account(account_data, Commitment::Finalized)
+                                .await;
+                            return;
+                        }
+                    }
+                }
                 ACCOUNT_STORED_IN_MEMORY.inc();
                 self.add_account_owner(account_data.pubkey, account_data.account.owner);
-                self.account_store.insert(
-                    account_data.pubkey,
-                    AccountDataByCommitment::initialize(account_data),
-                );
+                occ.get_mut()
+                    .push(AccountDataByCommitment::initialize(account_data));
+            }
+            dashmap::mapref::entry::Entry::Vacant(vac) => {
+                ACCOUNT_STORED_IN_MEMORY.inc();
+                self.add_account_owner(account_data.pubkey, account_data.account.owner);
+                vac.insert(vec![AccountDataByCommitment::initialize(account_data)]);
             }
         }
     }
@@ -228,19 +251,26 @@ impl AccountStorageInterface for InmemoryAccountStore {
         account_pk: Pubkey,
         commitment: Commitment,
     ) -> Result<Option<AccountData>, AccountLoadingError> {
-        if let Some(account_by_commitment) = self.account_store.get(&account_pk) {
-            let account_data = account_by_commitment.get_account_data(commitment);
-            if let Some(account_data) = &account_data {
-                // check if deleted
-                if account_data.account.lamports == 0 {
-                    // account is deleted
-                    return Ok(None);
+        match self.account_store.entry(account_pk.into()) {
+            dashmap::mapref::entry::Entry::Occupied(occ) => {
+                let accs = occ.get();
+                for acc in accs {
+                    if acc.pubkey == account_pk {
+                        let acc = acc.get_account_data(commitment);
+                        if let Some(account) = &acc {
+                            if account.account.lamports > 0 {
+                                return Ok(acc);
+                            } else {
+                                return Ok(None);
+                            }
+                        } else {
+                            return Ok(None);
+                        }
+                    }
                 }
+                Ok(None)
             }
-            // check if account has been deleted
-            Ok(account_data)
-        } else {
-            Ok(None)
+            dashmap::mapref::entry::Entry::Vacant(_) => Ok(None),
         }
     }
 
@@ -372,33 +402,53 @@ impl AccountStorageInterface for InmemoryAccountStore {
 
         let mut updated_accounts = vec![];
         for (writable_account, update_slot) in writable_accounts {
-            match self.account_store.entry(writable_account) {
+            match self.account_store.entry(writable_account.into()) {
                 dashmap::mapref::entry::Entry::Occupied(mut occ) => {
-                    if let Some((account_data, prev_account_data)) = occ
-                        .get_mut()
-                        .promote_slot_commitment(writable_account, update_slot, commitment)
-                    {
-                        if let Some(prev_account_data) = prev_account_data {
-                            // check if owner has changed
-                            if prev_account_data.account.owner != account_data.account.owner
-                                && self
-                                    .update_owner_delete_if_necessary(
-                                        &prev_account_data,
-                                        &account_data,
-                                        commitment,
-                                    )
-                                    .await
+                    let mut do_delete = false;
+                    for acc in occ.get_mut() {
+                        if acc.pubkey == writable_account {
+                            if let Some((account_data, prev_account_data)) = acc
+                                .promote_slot_commitment(writable_account, update_slot, commitment)
                             {
-                                occ.remove_entry();
-                            }
+                                if let Some(prev_account_data) = prev_account_data {
+                                    // check if owner has changed
+                                    if prev_account_data.account.owner != account_data.account.owner
+                                        && self
+                                            .update_owner_delete_if_necessary(
+                                                &prev_account_data,
+                                                &account_data,
+                                                commitment,
+                                            )
+                                            .await
+                                    {
+                                        do_delete = true;
+                                    }
 
-                            //check if account data has changed
-                            if prev_account_data != account_data {
-                                updated_accounts.push(account_data);
+                                    //check if account data has changed
+                                    if prev_account_data != account_data {
+                                        updated_accounts.push(account_data);
+                                    }
+                                } else {
+                                    // account has been confirmed first time
+                                    updated_accounts.push(account_data);
+                                }
                             }
+                        }
+                    }
+
+                    if do_delete {
+                        // only has one element i.e it is element that we want to remove
+                        if occ.get().len() == 1 {
+                            occ.remove_entry();
                         } else {
-                            // account has been confirmed first time
-                            updated_accounts.push(account_data);
+                            let index = occ
+                                .get()
+                                .iter()
+                                .enumerate()
+                                .find(|x| x.1.pubkey == writable_account)
+                                .map(|(index, _)| index)
+                                .unwrap();
+                            occ.get_mut().swap_remove(index);
                         }
                     }
                 }
@@ -412,7 +462,7 @@ impl AccountStorageInterface for InmemoryAccountStore {
         let number_of_processed_accounts_in_memory: i64 = self
             .account_store
             .iter()
-            .map(|x| x.processed_accounts.len() as i64)
+            .map(|x| x.iter().map(|x| x.processed_accounts.len()).sum::<usize>() as i64)
             .sum();
         TOTAL_PROCESSED_ACCOUNTS.set(number_of_processed_accounts_in_memory);
 
@@ -743,10 +793,11 @@ mod tests {
         assert_eq!(
             store
                 .account_store
-                .get(&pk1)
+                .get(&pk1.into())
                 .unwrap()
-                .processed_accounts
-                .len(),
+                .iter()
+                .map(|x| x.processed_accounts.len())
+                .sum::<usize>(),
             12
         );
         store
@@ -755,10 +806,11 @@ mod tests {
         assert_eq!(
             store
                 .account_store
-                .get(&pk1)
+                .get(&pk1.into())
                 .unwrap()
-                .processed_accounts
-                .len(),
+                .iter()
+                .map(|x| x.processed_accounts.len())
+                .sum::<usize>(),
             1
         );
 
