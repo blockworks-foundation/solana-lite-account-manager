@@ -334,9 +334,9 @@ impl AccountStorageInterface for InmemoryAccountStore {
             let mut current_slot = Some((slot, Some(slot_info.parent)));
             let mut writable_accounts: HashMap<Pubkey, Slot> = HashMap::new();
             while let Some((slot, parent)) = current_slot {
+                current_slot = None;
                 match lk.get_mut(&slot) {
                     Some(status) => {
-                        current_slot = None;
                         if status.commitment == commitment {
                             // slot already processed for the commitment
                             break;
