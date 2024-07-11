@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 solana-sdk = {workspace = true}
 solana-rpc-client-api = "~1.18.15" 
-tokio = {workspace = true}
+tokio = {workspace = true, features = ["full"]}
 itertools = {workspace = true}
 lz4 = {workspace = true}
 zstd = {workspace = true}
