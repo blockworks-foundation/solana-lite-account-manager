@@ -220,35 +220,8 @@ impl AccountStorageInterface for InmemoryAccountStore {
     }
 
     async fn initilize_or_update_account(&self, account_data: AccountData) {
-        if !Self::is_deleted(&account_data) && !self.satisfies_filters(&account_data).await {
-            return;
-        }
-
-        self.maybe_update_slot_status(&account_data, Commitment::Finalized)
+        self.update_account(account_data, Commitment::Finalized)
             .await;
-
-        match self.account_store.entry(account_data.pubkey.into()) {
-            dashmap::mapref::entry::Entry::Occupied(mut occ) => {
-                {
-                    for acc in occ.get_mut() {
-                        if acc.pubkey == account_data.pubkey {
-                            self.update_account(account_data, Commitment::Finalized)
-                                .await;
-                            return;
-                        }
-                    }
-                }
-                ACCOUNT_STORED_IN_MEMORY.inc();
-                self.add_account_owner(account_data.pubkey, account_data.account.owner);
-                occ.get_mut()
-                    .push(AccountDataByCommitment::initialize(account_data));
-            }
-            dashmap::mapref::entry::Entry::Vacant(vac) => {
-                ACCOUNT_STORED_IN_MEMORY.inc();
-                self.add_account_owner(account_data.pubkey, account_data.account.owner);
-                vac.insert(vec![AccountDataByCommitment::initialize(account_data)]);
-            }
-        }
     }
 
     async fn get_account(
@@ -417,7 +390,9 @@ impl AccountStorageInterface for InmemoryAccountStore {
                             {
                                 if let Some(prev_account_data) = prev_account_data {
                                     // check if owner has changed
-                                    if prev_account_data.account.owner != account_data.account.owner
+                                    if (prev_account_data.account.owner
+                                        != account_data.account.owner
+                                        || account_data.account.lamports == 0)
                                         && self
                                             .update_owner_delete_if_necessary(
                                                 &prev_account_data,
