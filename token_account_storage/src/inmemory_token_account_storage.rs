@@ -9,6 +9,7 @@ use itertools::Itertools;
 use lite_account_manager_common::{
     account_store_interface::AccountLoadingError, pubkey_container_utils::PartialPubkey,
 };
+use prometheus::{opts, register_int_gauge, IntGauge};
 use solana_sdk::pubkey::Pubkey;
 use tokio::sync::RwLock;
 
@@ -16,6 +17,14 @@ use crate::{
     account_types::{Program, TokenAccount, TokenAccountIndex},
     token_account_storage_interface::TokenAccountStorageInterface,
 };
+
+lazy_static::lazy_static! {
+    static ref TOKEN_ACCOUNT_STORED_IN_MEMORY: IntGauge =
+       register_int_gauge!(opts!("lite_account_token_accounts_in_memory", "Account InMemory")).unwrap();
+
+    static ref TOKEN_ACCOUNT_DELETED_IN_MEMORY: IntGauge =
+       register_int_gauge!(opts!("lite_account_token_accounts_deleted_in_memory", "Account InMemory")).unwrap();
+}
 
 const PARTIAL_PUBKEY_SIZE: usize = 8;
 type InmemoryPubkey = PartialPubkey<PARTIAL_PUBKEY_SIZE>;
@@ -72,6 +81,7 @@ impl TokenAccountStorageInterface for InmemoryTokenAccountStorage {
                 let token_index = write_lk.len() as TokenAccountIndex;
                 write_lk.push_back(token_account.to_bytes());
                 token_indexes.push(token_index);
+                TOKEN_ACCOUNT_STORED_IN_MEMORY.inc();
                 (token_index as TokenAccountIndex, false)
             }
             dashmap::mapref::entry::Entry::Vacant(v) => {
@@ -81,6 +91,7 @@ impl TokenAccountStorageInterface for InmemoryTokenAccountStorage {
                 write_lk.push_back(token_account.to_bytes());
                 v.insert(vec![token_index as TokenAccountIndex]);
                 drop(write_lk);
+                TOKEN_ACCOUNT_STORED_IN_MEMORY.inc();
                 (token_index, true)
             }
         }
@@ -137,6 +148,7 @@ impl TokenAccountStorageInterface for InmemoryTokenAccountStorage {
             for index in indexes {
                 let binary = write_lk.get_mut(index as usize).unwrap();
                 if TokenAccount::get_pubkey_from_binary(binary) == *pubkey {
+                    TOKEN_ACCOUNT_DELETED_IN_MEMORY.inc();
                     *binary = deleted_account;
                     return;
                 }

@@ -22,13 +22,13 @@ use tokio::sync::Mutex;
 
 lazy_static::lazy_static! {
     static ref ACCOUNT_STORED_IN_MEMORY: IntGauge =
-       register_int_gauge!(opts!("literpc_accounts_in_memory", "Account InMemory")).unwrap();
+       register_int_gauge!(opts!("lite_accounts_accounts_in_memory", "Account InMemory")).unwrap();
 
     static ref TOTAL_PROCESSED_ACCOUNTS: IntGauge =
-        register_int_gauge!(opts!("literpc_total_processed_accounts_in_memory", "Account processed accounts InMemory")).unwrap();
+        register_int_gauge!(opts!("lite_accounts_total_processed_accounts_in_memory", "Account processed accounts InMemory")).unwrap();
 
     static ref SLOT_FOR_LATEST_ACCOUNT_UPDATE: IntGauge =
-        register_int_gauge!(opts!("literpc_slot_for_latest_account_update", "Slot of latest account update")).unwrap();
+        register_int_gauge!(opts!("lite_accounts_slot_for_latest_account_update", "Slot of latest account update")).unwrap();
 }
 
 struct SlotStatus {

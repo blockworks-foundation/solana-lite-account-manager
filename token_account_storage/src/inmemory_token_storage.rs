@@ -17,6 +17,7 @@ use lite_account_manager_common::{
     pubkey_container_utils::PartialPubkey,
     slot_info::SlotInfo,
 };
+use prometheus::{opts, register_int_gauge, IntGauge};
 use serde::{Deserialize, Serialize};
 use solana_sdk::{clock::Slot, pubkey::Pubkey};
 use tokio::sync::RwLock;
@@ -31,6 +32,14 @@ use crate::{
         TokenProgramAccountType,
     },
 };
+
+lazy_static::lazy_static! {
+    static ref TOKEN_PROGRAM_TOTAL_PROCESSED_ACCOUNTS: IntGauge =
+        register_int_gauge!(opts!("lite_accounts_token_processed_accounts_in_memory", "Account processed accounts InMemory")).unwrap();
+
+    static ref TOKEN_MINTS_IN_MEMORY: IntGauge =
+        register_int_gauge!(opts!("lite_accounts_token_mints_in_memory", "Slot of latest account update")).unwrap();
+}
 
 const PARTIAL_PUBKEY_SIZE: usize = 6;
 type InmemoryPubkey = PartialPubkey<PARTIAL_PUBKEY_SIZE>;
@@ -81,6 +90,7 @@ impl ProcessedAccountStore {
                     }
                     None => {
                         log::debug!("Adding a new account {account_pk:?} to slot {slot}");
+                        TOKEN_PROGRAM_TOTAL_PROCESSED_ACCOUNTS.inc();
                         processed_account_by_slot.processed_accounts.insert(
                             account_pk,
                             ProcessedAccount {
@@ -94,6 +104,7 @@ impl ProcessedAccountStore {
             }
             None => {
                 log::debug!("Adding a new slot {slot} with new account {account_pk:?}");
+                TOKEN_PROGRAM_TOTAL_PROCESSED_ACCOUNTS.inc();
                 let mut processed_accounts = HashMap::new();
                 processed_accounts.insert(
                     account_pk,
@@ -177,6 +188,7 @@ impl ProcessedAccountStore {
                 std::collections::btree_map::Entry::Occupied(mut occ) => {
                     let value = occ.get_mut();
                     for (pk, acc) in value.processed_accounts.drain() {
+                        TOKEN_PROGRAM_TOTAL_PROCESSED_ACCOUNTS.dec();
                         // as we are going from most recent slot to least recent slot
                         // if the key already exists then we do not insert in the map
                         match map_of_accounts.entry(pk) {
@@ -292,7 +304,7 @@ impl ProcessedAccountStore {
     }
 }
 
-pub struct InMemoryTokenStorage {
+pub struct TokenProgramAccountsStorage {
     mints_by_index: Arc<DashMap<MintIndex, MintAccount>>,
     mints_index_by_pubkey: Arc<DashMap<Pubkey, MintIndex>>,
     multisigs: Arc<DashMap<Pubkey, MultiSig>>,
@@ -305,7 +317,7 @@ pub struct InMemoryTokenStorage {
     mint_counter: Arc<AtomicU32>,
 }
 
-impl InMemoryTokenStorage {
+impl TokenProgramAccountsStorage {
     #[allow(clippy::new_without_default)]
     pub fn new(token_accounts_storage: Arc<dyn TokenAccountStorageInterface>) -> Self {
         Self {
@@ -366,6 +378,7 @@ impl InMemoryTokenStorage {
                         self.mints_by_index.insert(*occ.get(), mint_data);
                     }
                     dashmap::mapref::entry::Entry::Vacant(v) => {
+                        TOKEN_MINTS_IN_MEMORY.inc();
                         let index = self
                             .mint_counter
                             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -379,6 +392,7 @@ impl InMemoryTokenStorage {
             }
             TokenProgramAccountType::Deleted(account_pk) => {
                 if let Some((_, index)) = self.mints_index_by_pubkey.remove(&account_pk) {
+                    TOKEN_MINTS_IN_MEMORY.dec();
                     self.mints_by_index.remove(&index);
                     self.accounts_index_by_mint.remove(&index);
                 } else if self.mints_index_by_pubkey.remove(&account_pk).is_some() {
@@ -544,7 +558,7 @@ struct TokenProgramSnapshot {
 }
 
 #[async_trait]
-impl AccountStorageInterface for InMemoryTokenStorage {
+impl AccountStorageInterface for TokenProgramAccountsStorage {
     async fn update_account(&self, account_data: AccountData, commitment: Commitment) -> bool {
         if !self.is_token_program_account(&account_data).await {
             return false;
