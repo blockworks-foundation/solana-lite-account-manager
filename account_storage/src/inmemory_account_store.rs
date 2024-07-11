@@ -147,10 +147,11 @@ impl InmemoryAccountStore {
     }
 
     pub fn account_store_contains_key(&self, pubkey: &Pubkey) -> bool {
-        if let Some(accs) = self.account_store.get(&pubkey.into()) {
-            accs.iter().any(|x| x.pubkey == *pubkey)
-        } else {
-            false
+        match self.account_store.entry(pubkey.into()) {
+            dashmap::mapref::entry::Entry::Occupied(occ) => {
+                occ.get().iter().any(|x| x.pubkey == *pubkey)
+            }
+            dashmap::mapref::entry::Entry::Vacant(_) => false,
         }
     }
 }
@@ -219,6 +220,10 @@ impl AccountStorageInterface for InmemoryAccountStore {
     }
 
     async fn initilize_or_update_account(&self, account_data: AccountData) {
+        if !Self::is_deleted(&account_data) && !self.satisfies_filters(&account_data).await {
+            return;
+        }
+
         self.maybe_update_slot_status(&account_data, Commitment::Finalized)
             .await;
 
@@ -457,15 +462,6 @@ impl AccountStorageInterface for InmemoryAccountStore {
                 }
             }
         }
-
-        // update number of processed accounts in memory
-        let number_of_processed_accounts_in_memory: i64 = self
-            .account_store
-            .iter()
-            .map(|x| x.iter().map(|x| x.processed_accounts.len()).sum::<usize>() as i64)
-            .sum();
-        TOTAL_PROCESSED_ACCOUNTS.set(number_of_processed_accounts_in_memory);
-
         updated_accounts
     }
 
