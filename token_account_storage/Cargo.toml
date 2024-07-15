@@ -11,10 +11,8 @@ spl-token-2022 = {workspace = true}
 
 lite-account-manager-common = {workspace = true}
 dashmap = {workspace = true}
-async-trait = { workspace = true }
 itertools = { workspace = true }
 futures = { workspace = true }
-tokio = {workspace = true, features = ["full"]}
 lazy_static = {workspace = true}
 prometheus = {workspace = true}
 log = {workspace = true}

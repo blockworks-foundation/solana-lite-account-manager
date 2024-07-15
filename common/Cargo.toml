@@ -5,12 +5,10 @@ edition = "2021"
 
 [dependencies]
 solana-sdk = {workspace = true}
-solana-rpc-client-api = "~1.18.15" 
-tokio = {workspace = true, features = ["full"]}
+solana-rpc-client-api = "~1.18.15"
 itertools = {workspace = true}
 lz4 = {workspace = true}
 zstd = {workspace = true}
-async-trait = {workspace = true}
 serde = {workspace = true}
 serde_json = {workspace = true}
 bs58 = {workspace = true}

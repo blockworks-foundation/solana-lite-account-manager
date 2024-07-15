@@ -5,7 +5,6 @@ use solana_sdk::{clock::Slot, pubkey::Pubkey};
 
 #[derive(Default)]
 pub struct AccountDataByCommitment {
-    pub pubkey: Pubkey,
     // should have maximum 32 entries, all processed slots which are not yet finalized
     pub processed_accounts: BTreeMap<Slot, AccountData>,
     pub confirmed_account: Option<AccountData>,
@@ -13,25 +12,11 @@ pub struct AccountDataByCommitment {
 }
 
 impl AccountDataByCommitment {
-    #[allow(deprecated)]
-    pub fn get_account_data(&self, commitment: Commitment) -> Option<AccountData> {
-        match commitment {
-            Commitment::Processed => self
-                .processed_accounts
-                .last_key_value()
-                .map(|(_, v)| v.clone())
-                .or(self.confirmed_account.clone()),
-            Commitment::Confirmed => self.confirmed_account.clone(),
-            Commitment::Finalized => self.finalized_account.clone(),
-        }
-    }
-
     // Should be used when accounts is created by geyser notification
     pub fn new(data: AccountData, commitment: Commitment) -> Self {
         let mut processed_accounts = BTreeMap::new();
         processed_accounts.insert(data.updated_slot, data.clone());
         AccountDataByCommitment {
-            pubkey: data.pubkey,
             processed_accounts,
             confirmed_account: if commitment == Commitment::Confirmed
                 || commitment == Commitment::Finalized
@@ -48,13 +33,24 @@ impl AccountDataByCommitment {
         }
     }
 
+    pub fn get_account_data(&self, commitment: Commitment) -> Option<AccountData> {
+        match commitment {
+            Commitment::Processed => self
+                .processed_accounts
+                .last_key_value()
+                .map(|(_, v)| v.clone())
+                .or(self.confirmed_account.clone()),
+            Commitment::Confirmed => self.confirmed_account.clone(),
+            Commitment::Finalized => self.finalized_account.clone(),
+        }
+    }
+
     // should be called with finalized accounts data
     // when accounts storage is being warmed up
     pub fn initialize(data: AccountData) -> Self {
         let mut processed_accounts = BTreeMap::new();
         processed_accounts.insert(data.updated_slot, data.clone());
         AccountDataByCommitment {
-            pubkey: data.pubkey,
             processed_accounts,
             confirmed_account: Some(data.clone()),
             finalized_account: Some(data),

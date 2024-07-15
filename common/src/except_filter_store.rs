@@ -1,7 +1,4 @@
 // Store returns true for all the filters except programs which are there in FilterStore
-
-use async_trait::async_trait;
-
 use crate::{
     account_data::AccountData,
     account_filter::{AccountFilter, AccountFilters},
@@ -21,13 +18,12 @@ impl ExceptFilterStore {
     }
 }
 
-#[async_trait]
 impl AccountFiltersStoreInterface for ExceptFilterStore {
-    async fn satisfies(&self, account_data: &AccountData) -> bool {
+    fn satisfies(&self, account_data: &AccountData) -> bool {
         !self.simple_filter_store.satisfies_filter(account_data)
     }
 
-    async fn contains_filter(&self, filter: &AccountFilter) -> bool {
+    fn contains_filter(&self, filter: &AccountFilter) -> bool {
         !self.simple_filter_store.contains_filter_internal(filter)
     }
 }
@@ -45,8 +41,8 @@ mod tests {
         except_filter_store::ExceptFilterStore,
     };
 
-    #[tokio::test]
-    pub async fn test_except_filter_store() {
+    #[test]
+    pub fn test_except_filter_store() {
         let mut except_filter_store = ExceptFilterStore::default();
         let program_id_1 = Pubkey::new_unique();
         let program_id_2 = Pubkey::new_unique();
@@ -63,107 +59,71 @@ mod tests {
             },
         ]);
 
-        assert!(
-            except_filter_store
-                .contains_filter(&AccountFilter {
-                    accounts: vec![],
-                    program_id: Some(Pubkey::new_unique()),
-                    filters: None
+        assert!(except_filter_store.contains_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(Pubkey::new_unique()),
+            filters: None
+        }));
+        assert!(except_filter_store.contains_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(Pubkey::new_unique()),
+            filters: Some(vec![AccountFilterType::Datasize(100)])
+        }));
+        assert!(except_filter_store.contains_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(Pubkey::new_unique()),
+            filters: Some(vec![
+                AccountFilterType::Datasize(200),
+                AccountFilterType::Memcmp(MemcmpFilter {
+                    offset: 100,
+                    data: crate::account_filter::MemcmpFilterData::Bytes(vec![1, 2, 3])
                 })
-                .await
-        );
-        assert!(
-            except_filter_store
-                .contains_filter(&AccountFilter {
-                    accounts: vec![],
-                    program_id: Some(Pubkey::new_unique()),
-                    filters: Some(vec![AccountFilterType::Datasize(100)])
-                })
-                .await
-        );
-        assert!(
-            except_filter_store
-                .contains_filter(&AccountFilter {
-                    accounts: vec![],
-                    program_id: Some(Pubkey::new_unique()),
-                    filters: Some(vec![
-                        AccountFilterType::Datasize(200),
-                        AccountFilterType::Memcmp(MemcmpFilter {
-                            offset: 100,
-                            data: crate::account_filter::MemcmpFilterData::Bytes(vec![1, 2, 3])
-                        })
-                    ])
-                })
-                .await
-        );
+            ])
+        }));
 
-        assert!(
-            !except_filter_store
-                .contains_filter(&AccountFilter {
-                    accounts: vec![],
-                    program_id: Some(program_id_1),
-                    filters: None
+        assert!(!except_filter_store.contains_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(program_id_1),
+            filters: None
+        }));
+        assert!(!except_filter_store.contains_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(program_id_1),
+            filters: Some(vec![AccountFilterType::Datasize(100)])
+        }));
+        assert!(!except_filter_store.contains_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(program_id_1),
+            filters: Some(vec![
+                AccountFilterType::Datasize(200),
+                AccountFilterType::Memcmp(MemcmpFilter {
+                    offset: 100,
+                    data: crate::account_filter::MemcmpFilterData::Bytes(vec![1, 2, 3])
                 })
-                .await
-        );
-        assert!(
-            !except_filter_store
-                .contains_filter(&AccountFilter {
-                    accounts: vec![],
-                    program_id: Some(program_id_1),
-                    filters: Some(vec![AccountFilterType::Datasize(100)])
-                })
-                .await
-        );
-        assert!(
-            !except_filter_store
-                .contains_filter(&AccountFilter {
-                    accounts: vec![],
-                    program_id: Some(program_id_1),
-                    filters: Some(vec![
-                        AccountFilterType::Datasize(200),
-                        AccountFilterType::Memcmp(MemcmpFilter {
-                            offset: 100,
-                            data: crate::account_filter::MemcmpFilterData::Bytes(vec![1, 2, 3])
-                        })
-                    ])
-                })
-                .await
-        );
+            ])
+        }));
 
-        assert!(
-            !except_filter_store
-                .contains_filter(&AccountFilter {
-                    accounts: vec![],
-                    program_id: Some(program_id_2),
-                    filters: None
+        assert!(!except_filter_store.contains_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(program_id_2),
+            filters: None
+        }));
+        assert!(!except_filter_store.contains_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(program_id_2),
+            filters: Some(vec![AccountFilterType::Datasize(100)])
+        }));
+        assert!(!except_filter_store.contains_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(program_id_2),
+            filters: Some(vec![
+                AccountFilterType::Datasize(200),
+                AccountFilterType::Memcmp(MemcmpFilter {
+                    offset: 100,
+                    data: crate::account_filter::MemcmpFilterData::Bytes(vec![1, 2, 3])
                 })
-                .await
-        );
-        assert!(
-            !except_filter_store
-                .contains_filter(&AccountFilter {
-                    accounts: vec![],
-                    program_id: Some(program_id_2),
-                    filters: Some(vec![AccountFilterType::Datasize(100)])
-                })
-                .await
-        );
-        assert!(
-            !except_filter_store
-                .contains_filter(&AccountFilter {
-                    accounts: vec![],
-                    program_id: Some(program_id_2),
-                    filters: Some(vec![
-                        AccountFilterType::Datasize(200),
-                        AccountFilterType::Memcmp(MemcmpFilter {
-                            offset: 100,
-                            data: crate::account_filter::MemcmpFilterData::Bytes(vec![1, 2, 3])
-                        })
-                    ])
-                })
-                .await
-        );
+            ])
+        }));
 
         let account_data_1 = &AccountData {
             pubkey: Pubkey::new_unique(),
@@ -177,7 +137,7 @@ mod tests {
             updated_slot: 1,
             write_version: 0,
         };
-        assert!(except_filter_store.satisfies(account_data_1).await);
+        assert!(except_filter_store.satisfies(account_data_1));
 
         let account_data_2 = &AccountData {
             pubkey: Pubkey::new_unique(),
@@ -191,7 +151,7 @@ mod tests {
             updated_slot: 1,
             write_version: 0,
         };
-        assert!(!except_filter_store.satisfies(account_data_2).await);
+        assert!(!except_filter_store.satisfies(account_data_2));
 
         let account_data_3 = &AccountData {
             pubkey: Pubkey::new_unique(),
@@ -205,6 +165,6 @@ mod tests {
             updated_slot: 1,
             write_version: 0,
         };
-        assert!(!except_filter_store.satisfies(account_data_3).await);
+        assert!(!except_filter_store.satisfies(account_data_3));
     }
 }

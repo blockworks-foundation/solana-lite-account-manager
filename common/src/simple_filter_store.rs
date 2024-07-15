@@ -2,7 +2,6 @@ use crate::{
     account_data::AccountData,
     account_filter::{AccountFilter, AccountFilterType, AccountFilters, MemcmpFilter},
 };
-use async_trait::async_trait;
 use solana_sdk::pubkey::Pubkey;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
@@ -155,13 +154,12 @@ impl SimpleFilterStore {
     }
 }
 
-#[async_trait]
 impl AccountFiltersStoreInterface for SimpleFilterStore {
-    async fn satisfies(&self, account_data: &AccountData) -> bool {
+    fn satisfies(&self, account_data: &AccountData) -> bool {
         self.satisfies_filter(account_data)
     }
 
-    async fn contains_filter(&self, filter: &AccountFilter) -> bool {
+    fn contains_filter(&self, filter: &AccountFilter) -> bool {
         self.contains_filter_internal(filter)
     }
 }

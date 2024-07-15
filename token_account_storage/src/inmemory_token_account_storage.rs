@@ -1,9 +1,8 @@
 use std::{
     collections::{HashSet, VecDeque},
-    sync::Arc,
+    sync::{Arc, RwLock},
 };
 
-use async_trait::async_trait;
 use dashmap::DashMap;
 use itertools::Itertools;
 use lite_account_manager_common::{
@@ -11,7 +10,6 @@ use lite_account_manager_common::{
 };
 use prometheus::{opts, register_int_gauge, IntGauge};
 use solana_sdk::pubkey::Pubkey;
-use tokio::sync::RwLock;
 
 use crate::{
     account_types::{Program, TokenAccount, TokenAccountIndex},
@@ -36,14 +34,13 @@ pub struct InmemoryTokenAccountStorage {
     token_accounts: Arc<RwLock<VecDeque<Vec<u8>>>>,
 }
 
-#[async_trait]
 impl TokenAccountStorageInterface for InmemoryTokenAccountStorage {
-    async fn contains(&self, pubkey: &Pubkey) -> Option<TokenAccountIndex> {
+    fn contains(&self, pubkey: &Pubkey) -> Option<TokenAccountIndex> {
         match self.pubkey_to_index.entry(pubkey.into()) {
             dashmap::mapref::entry::Entry::Occupied(occ) => {
                 let value = occ.get();
                 if value.len() > 1 {
-                    let lk = self.token_accounts.read().await;
+                    let lk = self.token_accounts.read().unwrap();
                     for index in value {
                         if TokenAccount::get_pubkey_from_binary(lk.get(*index as usize).unwrap())
                             == *pubkey
@@ -60,11 +57,11 @@ impl TokenAccountStorageInterface for InmemoryTokenAccountStorage {
         }
     }
 
-    async fn save_or_update(&self, token_account: TokenAccount) -> (TokenAccountIndex, bool) {
+    fn save_or_update(&self, token_account: TokenAccount) -> (TokenAccountIndex, bool) {
         match self.pubkey_to_index.entry(token_account.pubkey.into()) {
             dashmap::mapref::entry::Entry::Occupied(mut occ) => {
                 // already present
-                let mut write_lk = self.token_accounts.write().await;
+                let mut write_lk = self.token_accounts.write().unwrap();
                 {
                     let token_indexes = occ.get();
                     // update existing token account
@@ -86,7 +83,7 @@ impl TokenAccountStorageInterface for InmemoryTokenAccountStorage {
             }
             dashmap::mapref::entry::Entry::Vacant(v) => {
                 // add new token account
-                let mut write_lk = self.token_accounts.write().await;
+                let mut write_lk = self.token_accounts.write().unwrap();
                 let token_index = write_lk.len() as TokenAccountIndex;
                 write_lk.push_back(token_account.to_bytes());
                 v.insert(vec![token_index as TokenAccountIndex]);
@@ -97,11 +94,11 @@ impl TokenAccountStorageInterface for InmemoryTokenAccountStorage {
         }
     }
 
-    async fn get_by_index(
+    fn get_by_index(
         &self,
         indexes: HashSet<TokenAccountIndex>,
     ) -> Result<Vec<TokenAccount>, AccountLoadingError> {
-        let lk = self.token_accounts.read().await;
+        let lk = self.token_accounts.read().unwrap();
         let accounts = indexes
             .iter()
             .filter_map(|index| lk.get(*index as usize))
@@ -110,11 +107,11 @@ impl TokenAccountStorageInterface for InmemoryTokenAccountStorage {
         Ok(accounts)
     }
 
-    async fn get_by_pubkey(&self, pubkey: &Pubkey) -> Option<TokenAccount> {
+    fn get_by_pubkey(&self, pubkey: &Pubkey) -> Option<TokenAccount> {
         match self.pubkey_to_index.entry(pubkey.into()) {
             dashmap::mapref::entry::Entry::Occupied(occ) => {
                 let indexes = occ.get();
-                let lk = self.token_accounts.read().await;
+                let lk = self.token_accounts.read().unwrap();
                 for index in indexes {
                     let binary = lk.get(*index as usize).unwrap();
                     if TokenAccount::get_pubkey_from_binary(binary) == *pubkey {
@@ -128,10 +125,10 @@ impl TokenAccountStorageInterface for InmemoryTokenAccountStorage {
         }
     }
 
-    async fn delete(&self, pubkey: &Pubkey) {
+    fn delete(&self, pubkey: &Pubkey) {
         let acc_to_remove = self.pubkey_to_index.remove(&pubkey.into());
         if let Some((_, indexes)) = acc_to_remove {
-            let mut write_lk = self.token_accounts.write().await;
+            let mut write_lk = self.token_accounts.write().unwrap();
             let deleted_account = TokenAccount {
                 program: Program::TokenProgram,
                 is_deleted: true,
@@ -157,12 +154,12 @@ impl TokenAccountStorageInterface for InmemoryTokenAccountStorage {
         }
     }
 
-    async fn create_snapshot(&self, program: Program) -> Result<Vec<Vec<u8>>, AccountLoadingError> {
+    fn create_snapshot(&self, program: Program) -> Result<Vec<Vec<u8>>, AccountLoadingError> {
         let program_bit = match program {
             Program::TokenProgram => 0,
             Program::Token2022Program => 0x1,
         };
-        let lk = self.token_accounts.read().await;
+        let lk = self.token_accounts.read().unwrap();
         Ok(lk
             .iter()
             .filter(|x| (*x.first().unwrap() & 0x3 == program_bit) && *x.get(1).unwrap() == 0)

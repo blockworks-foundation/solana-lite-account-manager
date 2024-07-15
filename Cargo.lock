@@ -1870,7 +1870,6 @@ name = "lite-account-manager-common"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "async-trait",
  "base64 0.21.7",
  "bs58",
  "itertools",
@@ -1880,7 +1879,6 @@ dependencies = [
  "serde_json",
  "solana-rpc-client-api",
  "solana-sdk",
- "tokio",
  "zstd",
 ]
 
@@ -1888,7 +1886,6 @@ dependencies = [
 name = "lite-account-storage"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "bincode",
  "dashmap",
  "futures",
@@ -1900,14 +1897,12 @@ dependencies = [
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "solana-sdk",
- "tokio",
 ]
 
 [[package]]
 name = "lite-accounts-on-demand"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "futures",
  "itertools",
  "lazy_static",
@@ -1918,7 +1913,6 @@ dependencies = [
  "solana-account-decoder",
  "solana-client",
  "solana-sdk",
- "tokio",
 ]
 
 [[package]]
@@ -1927,7 +1921,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "arrayref",
- "async-trait",
  "bincode",
  "bitflags 2.6.0",
  "dashmap",
@@ -1945,7 +1938,6 @@ dependencies = [
  "solana-sdk",
  "spl-token",
  "spl-token-2022 3.0.2",
- "tokio",
  "tracing-subscriber",
 ]
 

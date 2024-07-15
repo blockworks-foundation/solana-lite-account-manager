@@ -1,10 +1,9 @@
 use std::{
     collections::{HashMap, HashSet},
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 use crate::account_data_by_commitment::AccountDataByCommitment;
-use async_trait::async_trait;
 use dashmap::DashMap;
 use lite_account_manager_common::{
     account_data::AccountData,
@@ -17,7 +16,6 @@ use lite_account_manager_common::{
 use prometheus::{opts, register_int_gauge, IntGauge};
 use solana_sdk::{pubkey::Pubkey, slot_history::Slot};
 use std::collections::BTreeMap;
-use tokio::sync::Mutex;
 
 lazy_static::lazy_static! {
     static ref ACCOUNT_STORED_IN_MEMORY: IntGauge =
@@ -69,7 +67,7 @@ impl InmemoryAccountStore {
     // here if the commitment is processed and the account has changed owner from A->B we keep the key for both A and B
     // then we remove the key from A for finalized commitment
     // returns true if entry needs to be deleted
-    async fn update_owner_delete_if_necessary(
+    fn update_owner_delete_if_necessary(
         &self,
         prev_account_data: &AccountData,
         new_account_data: &AccountData,
@@ -91,14 +89,11 @@ impl InmemoryAccountStore {
                 }
 
                 // account is deleted or if new does not satisfies the filter criterias
-                if Self::is_deleted(new_account_data)
-                    || !self.satisfies_filters(new_account_data).await
-                {
+                if Self::is_deleted(new_account_data) || !self.satisfies_filters(new_account_data) {
                     return true;
                 }
             }
-            if !Self::is_deleted(new_account_data) && self.satisfies_filters(new_account_data).await
-            {
+            if !Self::is_deleted(new_account_data) && self.satisfies_filters(new_account_data) {
                 // update owner if account was not deleted but owner was change and the filter criterias are satisfied
                 self.add_account_owner(new_account_data.pubkey, new_account_data.account.owner);
             }
@@ -106,13 +101,13 @@ impl InmemoryAccountStore {
         false
     }
 
-    async fn maybe_update_slot_status(
+    fn maybe_update_slot_status(
         &self,
         account_data: &AccountData,
         commitment: Commitment,
     ) -> Commitment {
         let slot = account_data.updated_slot;
-        let mut lk = self.slots_status.lock().await;
+        let mut lk = self.slots_status.lock().unwrap();
         let slot_status = match lk.get_mut(&slot) {
             Some(x) => x,
             None => {
@@ -137,8 +132,8 @@ impl InmemoryAccountStore {
         }
     }
 
-    pub async fn satisfies_filters(&self, account: &AccountData) -> bool {
-        self.filtered_accounts.satisfies(account).await
+    pub fn satisfies_filters(&self, account: &AccountData) -> bool {
+        self.filtered_accounts.satisfies(account)
     }
 
     pub fn is_deleted(account: &AccountData) -> bool {
@@ -150,23 +145,20 @@ impl InmemoryAccountStore {
     }
 }
 
-#[async_trait]
 impl AccountStorageInterface for InmemoryAccountStore {
-    async fn update_account(&self, account_data: AccountData, commitment: Commitment) -> bool {
+    fn update_account(&self, account_data: AccountData, commitment: Commitment) -> bool {
         SLOT_FOR_LATEST_ACCOUNT_UPDATE.set(account_data.updated_slot as i64);
 
         // account is neither deleted, nor tracked, not satifying any filters
         if !Self::is_deleted(&account_data)
-            && !self.satisfies_filters(&account_data).await
+            && !self.satisfies_filters(&account_data)
             && !self.account_store_contains_key(&account_data.pubkey)
         {
             return false;
         }
 
         // check if the blockhash and slot is already confirmed
-        let commitment = self
-            .maybe_update_slot_status(&account_data, commitment)
-            .await;
+        let commitment = self.maybe_update_slot_status(&account_data, commitment);
 
         match self.account_store.entry(account_data.pubkey) {
             dashmap::mapref::entry::Entry::Occupied(mut occ) => {
@@ -176,14 +168,11 @@ impl AccountStorageInterface for InmemoryAccountStore {
                 // if account has been updated
                 if account_data_in_store.update(account_data.clone(), commitment) {
                     if let Some(prev_account) = prev_account {
-                        if self
-                            .update_owner_delete_if_necessary(
-                                &prev_account,
-                                &account_data,
-                                commitment,
-                            )
-                            .await
-                        {
+                        if self.update_owner_delete_if_necessary(
+                            &prev_account,
+                            &account_data,
+                            commitment,
+                        ) {
                             occ.remove_entry();
                         }
                     }
@@ -193,7 +182,7 @@ impl AccountStorageInterface for InmemoryAccountStore {
                 }
             }
             dashmap::mapref::entry::Entry::Vacant(vac) => {
-                if self.satisfies_filters(&account_data).await {
+                if self.satisfies_filters(&account_data) {
                     ACCOUNT_STORED_IN_MEMORY.inc();
                     self.add_account_owner(account_data.pubkey, account_data.account.owner);
                     vac.insert(AccountDataByCommitment::new(
@@ -208,12 +197,11 @@ impl AccountStorageInterface for InmemoryAccountStore {
         }
     }
 
-    async fn initilize_or_update_account(&self, account_data: AccountData) {
-        self.update_account(account_data, Commitment::Finalized)
-            .await;
+    fn initilize_or_update_account(&self, account_data: AccountData) {
+        self.update_account(account_data, Commitment::Finalized);
     }
 
-    async fn get_account(
+    fn get_account(
         &self,
         account_pk: Pubkey,
         commitment: Commitment,
@@ -236,21 +224,17 @@ impl AccountStorageInterface for InmemoryAccountStore {
         }
     }
 
-    async fn get_program_accounts(
+    fn get_program_accounts(
         &self,
         program_pubkey: Pubkey,
         account_filters: Option<Vec<AccountFilterType>>,
         commitment: Commitment,
     ) -> Result<Vec<AccountData>, AccountLoadingError> {
-        if !self
-            .filtered_accounts
-            .contains_filter(&AccountFilter {
-                accounts: vec![],
-                program_id: Some(program_pubkey),
-                filters: account_filters.clone(),
-            })
-            .await
-        {
+        if !self.filtered_accounts.contains_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(program_pubkey),
+            filters: account_filters.clone(),
+        }) {
             return Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters);
         }
         match self.accounts_by_owner.entry(program_pubkey) {
@@ -258,7 +242,7 @@ impl AccountStorageInterface for InmemoryAccountStore {
                 let mut return_vec = vec![];
                 let program_pubkeys = occ.get();
                 for program_account in program_pubkeys.iter() {
-                    let account_data = self.get_account(*program_account, commitment).await?;
+                    let account_data = self.get_account(*program_account, commitment)?;
                     if let Some(account_data) = account_data {
                         // recheck program owner and filters
                         if account_data.account.owner.eq(&program_pubkey) {
@@ -282,14 +266,10 @@ impl AccountStorageInterface for InmemoryAccountStore {
         }
     }
 
-    async fn process_slot_data(
-        &self,
-        slot_info: SlotInfo,
-        commitment: Commitment,
-    ) -> Vec<AccountData> {
+    fn process_slot_data(&self, slot_info: SlotInfo, commitment: Commitment) -> Vec<AccountData> {
         let slot = slot_info.slot;
         let writable_accounts = {
-            let mut lk = self.slots_status.lock().await;
+            let mut lk = self.slots_status.lock().unwrap();
             let mut current_slot = Some((slot, Some(slot_info.parent)));
             let mut writable_accounts: HashMap<Pubkey, Slot> = HashMap::new();
             while let Some((slot, parent)) = current_slot {
@@ -376,13 +356,11 @@ impl AccountStorageInterface for InmemoryAccountStore {
                             // check if owner has changed
                             if (prev_account_data.account.owner != account_data.account.owner
                                 || account_data.account.lamports == 0)
-                                && self
-                                    .update_owner_delete_if_necessary(
-                                        &prev_account_data,
-                                        &account_data,
-                                        commitment,
-                                    )
-                                    .await
+                                && self.update_owner_delete_if_necessary(
+                                    &prev_account_data,
+                                    &account_data,
+                                    commitment,
+                                )
                             {
                                 occ.remove();
                             }
@@ -405,14 +383,12 @@ impl AccountStorageInterface for InmemoryAccountStore {
         updated_accounts
     }
 
-    async fn create_snapshot(&self, program_id: Pubkey) -> Result<Vec<u8>, AccountLoadingError> {
-        let accounts = self
-            .get_program_accounts(program_id, None, Commitment::Finalized)
-            .await?;
+    fn create_snapshot(&self, program_id: Pubkey) -> Result<Vec<u8>, AccountLoadingError> {
+        let accounts = self.get_program_accounts(program_id, None, Commitment::Finalized)?;
         Ok(bincode::serialize(&accounts).unwrap())
     }
 
-    async fn load_from_snapshot(
+    fn load_from_snapshot(
         &self,
         _program_id: Pubkey,
         snapshot: Vec<u8>,
@@ -420,7 +396,7 @@ impl AccountStorageInterface for InmemoryAccountStore {
         let accounts = bincode::deserialize::<Vec<AccountData>>(&snapshot)
             .map_err(|_| AccountLoadingError::DeserializationIssues)?;
         for account_data in accounts {
-            self.initilize_or_update_account(account_data).await;
+            self.initilize_or_update_account(account_data);
         }
         Ok(())
     }
@@ -497,8 +473,8 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    pub async fn test_account_store() {
+    #[test]
+    pub fn test_account_store() {
         let program = Pubkey::new_unique();
         let filter_store = new_filter_store(vec![AccountFilter {
             program_id: Some(program),
@@ -511,9 +487,7 @@ mod tests {
         let pk2 = Pubkey::new_unique();
 
         let account_data_0 = create_random_account(&mut rng, 0, pk1, program);
-        store
-            .initilize_or_update_account(account_data_0.clone())
-            .await;
+        store.initilize_or_update_account(account_data_0.clone());
 
         let account_data_1 = create_random_account(&mut rng, 0, pk2, program);
 
@@ -521,33 +495,31 @@ mod tests {
         pubkeys.insert(pk1);
         pubkeys.insert(pk2);
 
-        store
-            .initilize_or_update_account(account_data_1.clone())
-            .await;
+        store.initilize_or_update_account(account_data_1.clone());
 
         assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await,
+            store.get_account(pk1, Commitment::Processed),
             Ok(Some(account_data_0.clone()))
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await,
+            store.get_account(pk1, Commitment::Confirmed),
             Ok(Some(account_data_0.clone()))
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Finalized).await,
+            store.get_account(pk1, Commitment::Finalized),
             Ok(Some(account_data_0.clone()))
         );
 
         assert_eq!(
-            store.get_account(pk2, Commitment::Processed).await,
+            store.get_account(pk2, Commitment::Processed),
             Ok(Some(account_data_1.clone()))
         );
         assert_eq!(
-            store.get_account(pk2, Commitment::Confirmed).await,
+            store.get_account(pk2, Commitment::Confirmed),
             Ok(Some(account_data_1.clone()))
         );
         assert_eq!(
-            store.get_account(pk2, Commitment::Finalized).await,
+            store.get_account(pk2, Commitment::Finalized),
             Ok(Some(account_data_1.clone()))
         );
 
@@ -556,86 +528,72 @@ mod tests {
         let account_data_4 = create_random_account(&mut rng, 3, pk1, program);
         let account_data_5 = create_random_account(&mut rng, 4, pk1, program);
 
-        store
-            .update_account(account_data_2.clone(), Commitment::Processed)
-            .await;
-        store
-            .update_account(account_data_3.clone(), Commitment::Processed)
-            .await;
-        store
-            .update_account(account_data_4.clone(), Commitment::Processed)
-            .await;
-        store
-            .update_account(account_data_5.clone(), Commitment::Processed)
-            .await;
+        store.update_account(account_data_2.clone(), Commitment::Processed);
+        store.update_account(account_data_3.clone(), Commitment::Processed);
+        store.update_account(account_data_4.clone(), Commitment::Processed);
+        store.update_account(account_data_5.clone(), Commitment::Processed);
 
         assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await,
+            store.get_account(pk1, Commitment::Processed),
             Ok(Some(account_data_5.clone()))
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await,
+            store.get_account(pk1, Commitment::Confirmed),
             Ok(Some(account_data_0.clone()))
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Finalized).await,
+            store.get_account(pk1, Commitment::Finalized),
             Ok(Some(account_data_0.clone()))
         );
 
-        store
-            .process_slot_data(new_slot_info(1), Commitment::Confirmed)
-            .await;
+        store.process_slot_data(new_slot_info(1), Commitment::Confirmed);
 
         assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await,
+            store.get_account(pk1, Commitment::Processed),
             Ok(Some(account_data_5.clone()))
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await,
+            store.get_account(pk1, Commitment::Confirmed),
             Ok(Some(account_data_2.clone()))
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Finalized).await,
+            store.get_account(pk1, Commitment::Finalized),
             Ok(Some(account_data_0.clone()))
         );
 
-        store
-            .process_slot_data(new_slot_info(2), Commitment::Confirmed)
-            .await;
+        store.process_slot_data(new_slot_info(2), Commitment::Confirmed);
 
         assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await,
+            store.get_account(pk1, Commitment::Processed),
             Ok(Some(account_data_5.clone()))
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await,
+            store.get_account(pk1, Commitment::Confirmed),
             Ok(Some(account_data_3.clone()))
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Finalized).await,
+            store.get_account(pk1, Commitment::Finalized),
             Ok(Some(account_data_0.clone()))
         );
 
-        store
-            .process_slot_data(new_slot_info(1), Commitment::Finalized)
-            .await;
+        store.process_slot_data(new_slot_info(1), Commitment::Finalized);
 
         assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await,
+            store.get_account(pk1, Commitment::Processed),
             Ok(Some(account_data_5.clone()))
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await,
+            store.get_account(pk1, Commitment::Confirmed),
             Ok(Some(account_data_3.clone()))
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Finalized).await,
+            store.get_account(pk1, Commitment::Finalized),
             Ok(Some(account_data_2.clone()))
         );
     }
 
-    #[tokio::test]
-    pub async fn test_account_store_if_finalized_clears_old_processed_slots() {
+    #[test]
+    pub fn test_account_store_if_finalized_clears_old_processed_slots() {
         let program = Pubkey::new_unique();
         let filter_store = new_filter_store(vec![AccountFilter {
             program_id: Some(program),
@@ -651,80 +609,54 @@ mod tests {
 
         let mut rng = rand::thread_rng();
 
-        store
-            .initilize_or_update_account(create_random_account(&mut rng, 0, pk1, program))
-            .await;
+        store.initilize_or_update_account(create_random_account(&mut rng, 0, pk1, program));
 
-        store
-            .update_account(
-                create_random_account(&mut rng, 1, pk1, program),
-                Commitment::Processed,
-            )
-            .await;
-        store
-            .update_account(
-                create_random_account(&mut rng, 1, pk1, program),
-                Commitment::Processed,
-            )
-            .await;
-        store
-            .update_account(
-                create_random_account(&mut rng, 2, pk1, program),
-                Commitment::Processed,
-            )
-            .await;
-        store
-            .update_account(
-                create_random_account(&mut rng, 3, pk1, program),
-                Commitment::Processed,
-            )
-            .await;
-        store
-            .update_account(
-                create_random_account(&mut rng, 4, pk1, program),
-                Commitment::Processed,
-            )
-            .await;
-        store
-            .update_account(
-                create_random_account(&mut rng, 5, pk1, program),
-                Commitment::Processed,
-            )
-            .await;
-        store
-            .update_account(
-                create_random_account(&mut rng, 6, pk1, program),
-                Commitment::Processed,
-            )
-            .await;
-        store
-            .update_account(
-                create_random_account(&mut rng, 7, pk1, program),
-                Commitment::Processed,
-            )
-            .await;
+        store.update_account(
+            create_random_account(&mut rng, 1, pk1, program),
+            Commitment::Processed,
+        );
+        store.update_account(
+            create_random_account(&mut rng, 1, pk1, program),
+            Commitment::Processed,
+        );
+        store.update_account(
+            create_random_account(&mut rng, 2, pk1, program),
+            Commitment::Processed,
+        );
+        store.update_account(
+            create_random_account(&mut rng, 3, pk1, program),
+            Commitment::Processed,
+        );
+        store.update_account(
+            create_random_account(&mut rng, 4, pk1, program),
+            Commitment::Processed,
+        );
+        store.update_account(
+            create_random_account(&mut rng, 5, pk1, program),
+            Commitment::Processed,
+        );
+        store.update_account(
+            create_random_account(&mut rng, 6, pk1, program),
+            Commitment::Processed,
+        );
+        store.update_account(
+            create_random_account(&mut rng, 7, pk1, program),
+            Commitment::Processed,
+        );
 
         let account_8 = create_random_account(&mut rng, 8, pk1, program);
-        store
-            .update_account(account_8.clone(), Commitment::Processed)
-            .await;
-        store
-            .update_account(
-                create_random_account(&mut rng, 9, pk1, program),
-                Commitment::Processed,
-            )
-            .await;
-        store
-            .update_account(
-                create_random_account(&mut rng, 10, pk1, program),
-                Commitment::Processed,
-            )
-            .await;
+        store.update_account(account_8.clone(), Commitment::Processed);
+        store.update_account(
+            create_random_account(&mut rng, 9, pk1, program),
+            Commitment::Processed,
+        );
+        store.update_account(
+            create_random_account(&mut rng, 10, pk1, program),
+            Commitment::Processed,
+        );
 
         let last_account = create_random_account(&mut rng, 11, pk1, program);
-        store
-            .update_account(last_account.clone(), Commitment::Processed)
-            .await;
+        store.update_account(last_account.clone(), Commitment::Processed);
 
         assert_eq!(
             store
@@ -735,9 +667,7 @@ mod tests {
                 .len(),
             12
         );
-        store
-            .process_slot_data(new_slot_info(11), Commitment::Finalized)
-            .await;
+        store.process_slot_data(new_slot_info(11), Commitment::Finalized);
         assert_eq!(
             store
                 .account_store
@@ -749,23 +679,21 @@ mod tests {
         );
 
         assert_eq!(
-            store.get_account(pk1, Commitment::Finalized).await,
+            store.get_account(pk1, Commitment::Finalized),
             Ok(Some(last_account.clone())),
         );
 
         // check finalizing previous commitment does not affect
-        store
-            .process_slot_data(new_slot_info(8), Commitment::Finalized)
-            .await;
+        store.process_slot_data(new_slot_info(8), Commitment::Finalized);
 
         assert_eq!(
-            store.get_account(pk1, Commitment::Finalized).await,
+            store.get_account(pk1, Commitment::Finalized),
             Ok(Some(last_account)),
         );
     }
 
-    #[tokio::test]
-    pub async fn test_get_program_account() {
+    #[test]
+    pub fn test_get_program_account() {
         let prog_1 = Pubkey::new_unique();
         let prog_2 = Pubkey::new_unique();
         let prog_3 = Pubkey::new_unique();
@@ -799,133 +727,86 @@ mod tests {
 
         let pks = (0..5).map(|_| Pubkey::new_unique()).collect_vec();
 
-        store
-            .update_account(
-                create_random_account(&mut rng, 1, pks[0], prog_1),
-                Commitment::Confirmed,
-            )
-            .await;
-        store
-            .update_account(
-                create_random_account(&mut rng, 1, pks[1], prog_1),
-                Commitment::Confirmed,
-            )
-            .await;
-        store
-            .update_account(
-                create_random_account(&mut rng, 1, pks[2], prog_1),
-                Commitment::Confirmed,
-            )
-            .await;
-        store
-            .update_account(
-                create_random_account(&mut rng, 1, pks[3], prog_1),
-                Commitment::Confirmed,
-            )
-            .await;
+        store.update_account(
+            create_random_account(&mut rng, 1, pks[0], prog_1),
+            Commitment::Confirmed,
+        );
+        store.update_account(
+            create_random_account(&mut rng, 1, pks[1], prog_1),
+            Commitment::Confirmed,
+        );
+        store.update_account(
+            create_random_account(&mut rng, 1, pks[2], prog_1),
+            Commitment::Confirmed,
+        );
+        store.update_account(
+            create_random_account(&mut rng, 1, pks[3], prog_1),
+            Commitment::Confirmed,
+        );
 
-        store
-            .update_account(
-                create_random_account(&mut rng, 1, pks[4], prog_2),
-                Commitment::Confirmed,
-            )
-            .await;
+        store.update_account(
+            create_random_account(&mut rng, 1, pks[4], prog_2),
+            Commitment::Confirmed,
+        );
 
-        let acc_prgram_1 = store
-            .get_program_accounts(prog_1, None, Commitment::Processed)
-            .await;
+        let acc_prgram_1 = store.get_program_accounts(prog_1, None, Commitment::Processed);
         assert!(acc_prgram_1.is_ok());
         assert_eq!(acc_prgram_1.unwrap().len(), 4);
-        let acc_prgram_1 = store
-            .get_program_accounts(prog_1, None, Commitment::Confirmed)
-            .await;
+        let acc_prgram_1 = store.get_program_accounts(prog_1, None, Commitment::Confirmed);
         assert!(acc_prgram_1.is_ok());
         assert_eq!(acc_prgram_1.unwrap().len(), 4);
-        let acc_prgram_1 = store
-            .get_program_accounts(prog_1, None, Commitment::Finalized)
-            .await;
+        let acc_prgram_1 = store.get_program_accounts(prog_1, None, Commitment::Finalized);
         assert!(acc_prgram_1.is_ok());
         assert!(acc_prgram_1.unwrap().is_empty());
 
-        let acc_prgram_2 = store
-            .get_program_accounts(prog_2, None, Commitment::Processed)
-            .await;
+        let acc_prgram_2 = store.get_program_accounts(prog_2, None, Commitment::Processed);
         assert!(acc_prgram_2.is_ok());
         assert_eq!(acc_prgram_2.unwrap().len(), 1);
-        let acc_prgram_2 = store
-            .get_program_accounts(prog_2, None, Commitment::Confirmed)
-            .await;
+        let acc_prgram_2 = store.get_program_accounts(prog_2, None, Commitment::Confirmed);
         assert!(acc_prgram_2.is_ok());
         assert_eq!(acc_prgram_2.unwrap().len(), 1);
-        let acc_prgram_2 = store
-            .get_program_accounts(prog_2, None, Commitment::Finalized)
-            .await;
+        let acc_prgram_2 = store.get_program_accounts(prog_2, None, Commitment::Finalized);
         assert!(acc_prgram_2.is_ok());
         assert!(acc_prgram_2.unwrap().is_empty());
 
-        let acc_prgram_3 = store
-            .get_program_accounts(Pubkey::new_unique(), None, Commitment::Processed)
-            .await;
+        let acc_prgram_3 =
+            store.get_program_accounts(Pubkey::new_unique(), None, Commitment::Processed);
         assert!(acc_prgram_3.is_err());
-        let acc_prgram_3 = store
-            .get_program_accounts(Pubkey::new_unique(), None, Commitment::Confirmed)
-            .await;
+        let acc_prgram_3 =
+            store.get_program_accounts(Pubkey::new_unique(), None, Commitment::Confirmed);
         assert!(acc_prgram_3.is_err());
-        let acc_prgram_3 = store
-            .get_program_accounts(Pubkey::new_unique(), None, Commitment::Finalized)
-            .await;
+        let acc_prgram_3 =
+            store.get_program_accounts(Pubkey::new_unique(), None, Commitment::Finalized);
         assert!(acc_prgram_3.is_err());
 
-        store
-            .process_slot_data(new_slot_info(1), Commitment::Finalized)
-            .await;
+        store.process_slot_data(new_slot_info(1), Commitment::Finalized);
 
-        let acc_prgram_1 = store
-            .get_program_accounts(prog_1, None, Commitment::Finalized)
-            .await;
+        let acc_prgram_1 = store.get_program_accounts(prog_1, None, Commitment::Finalized);
         assert!(acc_prgram_1.is_ok());
         assert_eq!(acc_prgram_1.unwrap().len(), 4);
-        let acc_prgram_2 = store
-            .get_program_accounts(prog_2, None, Commitment::Finalized)
-            .await;
+        let acc_prgram_2 = store.get_program_accounts(prog_2, None, Commitment::Finalized);
         assert!(acc_prgram_2.is_ok());
         assert_eq!(acc_prgram_2.unwrap().len(), 1);
 
         let pk = Pubkey::new_unique();
 
         let account_finalized = create_random_account(&mut rng, 2, pk, prog_3);
-        store
-            .update_account(account_finalized.clone(), Commitment::Finalized)
-            .await;
-        store
-            .process_slot_data(new_slot_info(2), Commitment::Finalized)
-            .await;
+        store.update_account(account_finalized.clone(), Commitment::Finalized);
+        store.process_slot_data(new_slot_info(2), Commitment::Finalized);
 
         let account_confirmed = create_random_account(&mut rng, 3, pk, prog_3);
-        store
-            .update_account(account_confirmed.clone(), Commitment::Confirmed)
-            .await;
+        store.update_account(account_confirmed.clone(), Commitment::Confirmed);
 
         let account_processed = create_random_account(&mut rng, 4, pk, prog_4);
-        store
-            .update_account(account_processed.clone(), Commitment::Processed)
-            .await;
+        store.update_account(account_processed.clone(), Commitment::Processed);
 
-        let f = store
-            .get_program_accounts(prog_3, None, Commitment::Finalized)
-            .await;
+        let f = store.get_program_accounts(prog_3, None, Commitment::Finalized);
 
-        let c = store
-            .get_program_accounts(prog_3, None, Commitment::Confirmed)
-            .await;
+        let c = store.get_program_accounts(prog_3, None, Commitment::Confirmed);
 
-        let p_3 = store
-            .get_program_accounts(prog_3, None, Commitment::Processed)
-            .await;
+        let p_3 = store.get_program_accounts(prog_3, None, Commitment::Processed);
 
-        let p_4 = store
-            .get_program_accounts(prog_4, None, Commitment::Processed)
-            .await;
+        let p_4 = store.get_program_accounts(prog_4, None, Commitment::Processed);
 
         assert_eq!(c, Ok(vec![account_confirmed.clone()]));
         assert_eq!(p_3, Ok(vec![]));
@@ -933,46 +814,30 @@ mod tests {
 
         assert_eq!(f, Ok(vec![account_finalized.clone()]));
 
-        store
-            .process_slot_data(new_slot_info(3), Commitment::Finalized)
-            .await;
-        store
-            .process_slot_data(new_slot_info(4), Commitment::Confirmed)
-            .await;
+        store.process_slot_data(new_slot_info(3), Commitment::Finalized);
+        store.process_slot_data(new_slot_info(4), Commitment::Confirmed);
 
-        let f = store
-            .get_program_accounts(prog_3, None, Commitment::Finalized)
-            .await;
+        let f = store.get_program_accounts(prog_3, None, Commitment::Finalized);
 
-        let p_3 = store
-            .get_program_accounts(prog_3, None, Commitment::Confirmed)
-            .await;
+        let p_3 = store.get_program_accounts(prog_3, None, Commitment::Confirmed);
 
-        let p_4 = store
-            .get_program_accounts(prog_4, None, Commitment::Confirmed)
-            .await;
+        let p_4 = store.get_program_accounts(prog_4, None, Commitment::Confirmed);
 
         assert_eq!(f, Ok(vec![account_confirmed.clone()]));
         assert_eq!(p_3, Ok(vec![]));
         assert_eq!(p_4, Ok(vec![account_processed.clone()]));
 
-        store
-            .process_slot_data(new_slot_info(4), Commitment::Finalized)
-            .await;
-        let p_3 = store
-            .get_program_accounts(prog_3, None, Commitment::Finalized)
-            .await;
+        store.process_slot_data(new_slot_info(4), Commitment::Finalized);
+        let p_3 = store.get_program_accounts(prog_3, None, Commitment::Finalized);
 
-        let p_4 = store
-            .get_program_accounts(prog_4, None, Commitment::Finalized)
-            .await;
+        let p_4 = store.get_program_accounts(prog_4, None, Commitment::Finalized);
 
         assert_eq!(p_3, Ok(vec![]));
         assert_eq!(p_4, Ok(vec![account_processed.clone()]));
     }
 
-    #[tokio::test]
-    pub async fn writing_old_account_state() {
+    #[test]
+    pub fn writing_old_account_state() {
         let program = Pubkey::new_unique();
         let filter_store = new_filter_store(vec![AccountFilter {
             program_id: Some(program),
@@ -986,144 +851,126 @@ mod tests {
 
         // setting random account as finalized at slot 0
         let account_data_0 = create_random_account(&mut rng, 0, pk1, program);
-        store
-            .initilize_or_update_account(account_data_0.clone())
-            .await;
+        store.initilize_or_update_account(account_data_0.clone());
 
         assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await,
+            store.get_account(pk1, Commitment::Processed),
             Ok(Some(account_data_0.clone()))
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await,
+            store.get_account(pk1, Commitment::Confirmed),
             Ok(Some(account_data_0.clone()))
         );
 
         // updating state for processed at slot 3
         let account_data_slot_3 = create_random_account(&mut rng, 3, pk1, program);
-        store
-            .update_account(account_data_slot_3.clone(), Commitment::Processed)
-            .await;
+        store.update_account(account_data_slot_3.clone(), Commitment::Processed);
         assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await,
+            store.get_account(pk1, Commitment::Processed),
             Ok(Some(account_data_slot_3.clone()))
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await,
+            store.get_account(pk1, Commitment::Confirmed),
             Ok(Some(account_data_0.clone()))
         );
 
         // updating state for processed at slot 2
         let account_data_slot_2 = create_random_account(&mut rng, 2, pk1, program);
-        store
-            .update_account(account_data_slot_2.clone(), Commitment::Processed)
-            .await;
+        store.update_account(account_data_slot_2.clone(), Commitment::Processed);
         assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await,
+            store.get_account(pk1, Commitment::Processed),
             Ok(Some(account_data_slot_3.clone()))
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await,
+            store.get_account(pk1, Commitment::Confirmed),
             Ok(Some(account_data_0.clone()))
         );
 
         // confirming slot 2
-        let updates = store
-            .process_slot_data(new_slot_info(2), Commitment::Confirmed)
-            .await;
+        let updates = store.process_slot_data(new_slot_info(2), Commitment::Confirmed);
         assert_eq!(updates, vec![account_data_slot_2.clone()]);
         assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await,
+            store.get_account(pk1, Commitment::Processed),
             Ok(Some(account_data_slot_3.clone()))
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await,
+            store.get_account(pk1, Commitment::Confirmed),
             Ok(Some(account_data_slot_2.clone()))
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Finalized).await,
+            store.get_account(pk1, Commitment::Finalized),
             Ok(Some(account_data_0.clone()))
         );
 
         // confirming random state at slot 1 / does not do anything as slot 2 has already been confrimed
         let account_data_slot_1 = create_random_account(&mut rng, 1, pk1, program);
-        store
-            .update_account(account_data_slot_1.clone(), Commitment::Confirmed)
-            .await;
+        store.update_account(account_data_slot_1.clone(), Commitment::Confirmed);
         assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await,
+            store.get_account(pk1, Commitment::Processed),
             Ok(Some(account_data_slot_3.clone()))
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await,
+            store.get_account(pk1, Commitment::Confirmed),
             Ok(Some(account_data_slot_2.clone()))
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Finalized).await,
+            store.get_account(pk1, Commitment::Finalized),
             Ok(Some(account_data_0.clone()))
         );
 
         // making slot 3 finalized
-        let updates = store
-            .process_slot_data(new_slot_info(3), Commitment::Finalized)
-            .await;
+        let updates = store.process_slot_data(new_slot_info(3), Commitment::Finalized);
         assert_eq!(updates, vec![account_data_slot_3.clone()]);
         assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await,
+            store.get_account(pk1, Commitment::Processed),
             Ok(Some(account_data_slot_3.clone()))
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await,
+            store.get_account(pk1, Commitment::Confirmed),
             Ok(Some(account_data_slot_3.clone()))
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Finalized).await,
+            store.get_account(pk1, Commitment::Finalized),
             Ok(Some(account_data_slot_3.clone()))
         );
 
         // making slot 2 finalized
-        let updates = store
-            .process_slot_data(new_slot_info(2), Commitment::Finalized)
-            .await;
+        let updates = store.process_slot_data(new_slot_info(2), Commitment::Finalized);
         assert!(updates.is_empty());
         assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await,
+            store.get_account(pk1, Commitment::Processed),
             Ok(Some(account_data_slot_3.clone()))
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await,
+            store.get_account(pk1, Commitment::Confirmed),
             Ok(Some(account_data_slot_3.clone()))
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Finalized).await,
+            store.get_account(pk1, Commitment::Finalized),
             Ok(Some(account_data_slot_3.clone()))
         );
 
         // useless old updates
         let account_data_slot_1_2 = create_random_account(&mut rng, 1, pk1, program);
         let account_data_slot_2_2 = create_random_account(&mut rng, 2, pk1, program);
-        store
-            .update_account(account_data_slot_1_2.clone(), Commitment::Processed)
-            .await;
-        store
-            .update_account(account_data_slot_2_2.clone(), Commitment::Confirmed)
-            .await;
+        store.update_account(account_data_slot_1_2.clone(), Commitment::Processed);
+        store.update_account(account_data_slot_2_2.clone(), Commitment::Confirmed);
         assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await,
+            store.get_account(pk1, Commitment::Processed),
             Ok(Some(account_data_slot_3.clone()))
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await,
+            store.get_account(pk1, Commitment::Confirmed),
             Ok(Some(account_data_slot_3.clone()))
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Finalized).await,
+            store.get_account(pk1, Commitment::Finalized),
             Ok(Some(account_data_slot_3.clone()))
         );
     }
 
-    #[tokio::test]
-    pub async fn account_states_with_different_write_version() {
+    #[test]
+    pub fn account_states_with_different_write_version() {
         let program = Pubkey::new_unique();
         let filter_store = new_filter_store(vec![AccountFilter {
             program_id: Some(program),
@@ -1138,98 +985,70 @@ mod tests {
         // setting random account as finalized at slot 0
         let account_data_10 =
             create_random_account_with_write_version(&mut rng, 1, pk1, program, 10);
-        store
-            .update_account(account_data_10.clone(), Commitment::Processed)
-            .await;
+        store.update_account(account_data_10.clone(), Commitment::Processed);
         assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await,
+            store.get_account(pk1, Commitment::Processed),
             Ok(Some(account_data_10.clone()))
         );
-        assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await,
-            Ok(None)
-        );
-        assert_eq!(
-            store.get_account(pk1, Commitment::Finalized).await,
-            Ok(None)
-        );
+        assert_eq!(store.get_account(pk1, Commitment::Confirmed), Ok(None));
+        assert_eq!(store.get_account(pk1, Commitment::Finalized), Ok(None));
 
         // with higher write version process account is updated
         let account_data_11 =
             create_random_account_with_write_version(&mut rng, 1, pk1, program, 11);
-        store
-            .update_account(account_data_11.clone(), Commitment::Processed)
-            .await;
+        store.update_account(account_data_11.clone(), Commitment::Processed);
         assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await,
+            store.get_account(pk1, Commitment::Processed),
             Ok(Some(account_data_11.clone()))
         );
-        assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await,
-            Ok(None)
-        );
-        assert_eq!(
-            store.get_account(pk1, Commitment::Finalized).await,
-            Ok(None)
-        );
+        assert_eq!(store.get_account(pk1, Commitment::Confirmed), Ok(None));
+        assert_eq!(store.get_account(pk1, Commitment::Finalized), Ok(None));
 
         // with lower write version process account is not updated
         let account_data_9 = create_random_account_with_write_version(&mut rng, 1, pk1, program, 9);
-        store
-            .update_account(account_data_9.clone(), Commitment::Processed)
-            .await;
+        store.update_account(account_data_9.clone(), Commitment::Processed);
         assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await,
+            store.get_account(pk1, Commitment::Processed),
             Ok(Some(account_data_11.clone()))
         );
-        assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await,
-            Ok(None)
-        );
-        assert_eq!(
-            store.get_account(pk1, Commitment::Finalized).await,
-            Ok(None)
-        );
+        assert_eq!(store.get_account(pk1, Commitment::Confirmed), Ok(None));
+        assert_eq!(store.get_account(pk1, Commitment::Finalized), Ok(None));
 
         // with finalized commitment all the last account version is taken into account
-        store
-            .process_slot_data(new_slot_info(1), Commitment::Finalized)
-            .await;
+        store.process_slot_data(new_slot_info(1), Commitment::Finalized);
         assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await,
+            store.get_account(pk1, Commitment::Processed),
             Ok(Some(account_data_11.clone()))
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await,
+            store.get_account(pk1, Commitment::Confirmed),
             Ok(Some(account_data_11.clone()))
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Finalized).await,
+            store.get_account(pk1, Commitment::Finalized),
             Ok(Some(account_data_11.clone()))
         );
 
         // if the account for slot is updated after with higher account write version both processed and finalized slots are updated
         let account_data_12 =
             create_random_account_with_write_version(&mut rng, 1, pk1, program, 12);
-        store
-            .update_account(account_data_12.clone(), Commitment::Processed)
-            .await;
+        store.update_account(account_data_12.clone(), Commitment::Processed);
         assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await,
+            store.get_account(pk1, Commitment::Processed),
             Ok(Some(account_data_12.clone()))
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await,
+            store.get_account(pk1, Commitment::Confirmed),
             Ok(Some(account_data_12.clone()))
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Finalized).await,
+            store.get_account(pk1, Commitment::Finalized),
             Ok(Some(account_data_12.clone()))
         );
     }
 
-    #[tokio::test]
-    pub async fn test_owner_changes() {
+    #[test]
+    pub fn test_owner_changes() {
         let program_1 = Pubkey::new_unique();
         let program_2 = Pubkey::new_unique();
         let program_3 = Pubkey::new_unique();
@@ -1254,329 +1073,264 @@ mod tests {
         let account_1 = create_random_account(&mut rng, 0, pk1, program_1);
         let account_2 = create_random_account(&mut rng, 1, pk2, program_2);
         let account_3 = create_random_account(&mut rng, 1, pk3, program_3);
-        store.initilize_or_update_account(account_1.clone()).await;
-        store
-            .update_account(account_2.clone(), Commitment::Processed)
-            .await;
-        store
-            .update_account(account_3.clone(), Commitment::Processed)
-            .await;
+        store.initilize_or_update_account(account_1.clone());
+        store.update_account(account_2.clone(), Commitment::Processed);
+        store.update_account(account_3.clone(), Commitment::Processed);
         assert_eq!(
-            store.get_account(pk1, Commitment::Finalized).await.unwrap(),
+            store.get_account(pk1, Commitment::Finalized).unwrap(),
             Some(account_1.clone())
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await.unwrap(),
+            store.get_account(pk1, Commitment::Confirmed).unwrap(),
             Some(account_1.clone())
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await.unwrap(),
+            store.get_account(pk1, Commitment::Processed).unwrap(),
             Some(account_1.clone())
         );
         assert_eq!(
-            store.get_account(pk2, Commitment::Processed).await.unwrap(),
+            store.get_account(pk2, Commitment::Processed).unwrap(),
             Some(account_2.clone())
         );
-        assert_eq!(
-            store.get_account(pk2, Commitment::Confirmed).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk2, Commitment::Finalized).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk3, Commitment::Processed).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk3, Commitment::Confirmed).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk3, Commitment::Processed).await.unwrap(),
-            None
-        );
+        assert_eq!(store.get_account(pk2, Commitment::Confirmed).unwrap(), None);
+        assert_eq!(store.get_account(pk2, Commitment::Finalized).unwrap(), None);
+        assert_eq!(store.get_account(pk3, Commitment::Processed).unwrap(), None);
+        assert_eq!(store.get_account(pk3, Commitment::Confirmed).unwrap(), None);
+        assert_eq!(store.get_account(pk3, Commitment::Processed).unwrap(), None);
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Processed)
-                .await
                 .unwrap(),
             vec![account_1.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Confirmed)
-                .await
                 .unwrap(),
             vec![account_1.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Finalized)
-                .await
                 .unwrap(),
             vec![account_1.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_2, None, Commitment::Processed)
-                .await
                 .unwrap(),
             vec![account_2.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_2, None, Commitment::Confirmed)
-                .await
                 .unwrap(),
             vec![]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_2, None, Commitment::Finalized)
-                .await
                 .unwrap(),
             vec![]
         );
         assert_eq!(
-            store
-                .get_program_accounts(program_3, None, Commitment::Processed)
-                .await,
+            store.get_program_accounts(program_3, None, Commitment::Processed),
             Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
         );
         assert_eq!(
-            store
-                .get_program_accounts(program_3, None, Commitment::Confirmed)
-                .await,
+            store.get_program_accounts(program_3, None, Commitment::Confirmed),
             Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
         );
         assert_eq!(
-            store
-                .get_program_accounts(program_3, None, Commitment::Finalized)
-                .await,
+            store.get_program_accounts(program_3, None, Commitment::Finalized),
             Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
         );
 
-        store
-            .process_slot_data(new_slot_info(1), Commitment::Confirmed)
-            .await;
+        store.process_slot_data(new_slot_info(1), Commitment::Confirmed);
         // next slots/ change owner for account1 and account 2
         let account_1_slot2 = create_random_account(&mut rng, 2, pk1, program_2);
         let account_2_slot2 = create_random_account(&mut rng, 2, pk2, program_1);
-        store
-            .update_account(account_1_slot2.clone(), Commitment::Processed)
-            .await;
-        store
-            .update_account(account_2_slot2.clone(), Commitment::Processed)
-            .await;
+        store.update_account(account_1_slot2.clone(), Commitment::Processed);
+        store.update_account(account_2_slot2.clone(), Commitment::Processed);
 
         assert_eq!(
-            store.get_account(pk1, Commitment::Finalized).await.unwrap(),
+            store.get_account(pk1, Commitment::Finalized).unwrap(),
             Some(account_1.clone())
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await.unwrap(),
+            store.get_account(pk1, Commitment::Confirmed).unwrap(),
             Some(account_1.clone())
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await.unwrap(),
+            store.get_account(pk1, Commitment::Processed).unwrap(),
             Some(account_1_slot2.clone())
         );
         assert_eq!(
-            store.get_account(pk2, Commitment::Processed).await.unwrap(),
+            store.get_account(pk2, Commitment::Processed).unwrap(),
             Some(account_2_slot2.clone())
         );
         assert_eq!(
-            store.get_account(pk2, Commitment::Confirmed).await.unwrap(),
+            store.get_account(pk2, Commitment::Confirmed).unwrap(),
             Some(account_2.clone())
         );
-        assert_eq!(
-            store.get_account(pk2, Commitment::Finalized).await.unwrap(),
-            None
-        );
+        assert_eq!(store.get_account(pk2, Commitment::Finalized).unwrap(), None);
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Processed)
-                .await
                 .unwrap(),
             vec![account_2_slot2.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Confirmed)
-                .await
                 .unwrap(),
             vec![account_1.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Finalized)
-                .await
                 .unwrap(),
             vec![account_1.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_2, None, Commitment::Processed)
-                .await
                 .unwrap(),
             vec![account_1_slot2.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_2, None, Commitment::Confirmed)
-                .await
                 .unwrap(),
             vec![account_2.clone()]
         );
         assert_eq!(
-            store
-                .get_program_accounts(program_2, None, Commitment::Finalized)
-                .await,
+            store.get_program_accounts(program_2, None, Commitment::Finalized),
             Ok(vec![])
         );
 
-        store
-            .process_slot_data(new_slot_info(1), Commitment::Finalized)
-            .await;
-        store
-            .process_slot_data(new_slot_info(2), Commitment::Confirmed)
-            .await;
+        store.process_slot_data(new_slot_info(1), Commitment::Finalized);
+        store.process_slot_data(new_slot_info(2), Commitment::Confirmed);
         // next slots/ change owner for account1 and account 2
         assert_eq!(
-            store.get_account(pk1, Commitment::Finalized).await.unwrap(),
+            store.get_account(pk1, Commitment::Finalized).unwrap(),
             Some(account_1.clone())
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await.unwrap(),
+            store.get_account(pk1, Commitment::Confirmed).unwrap(),
             Some(account_1_slot2.clone())
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await.unwrap(),
+            store.get_account(pk1, Commitment::Processed).unwrap(),
             Some(account_1_slot2.clone())
         );
         assert_eq!(
-            store.get_account(pk2, Commitment::Processed).await.unwrap(),
+            store.get_account(pk2, Commitment::Processed).unwrap(),
             Some(account_2_slot2.clone())
         );
         assert_eq!(
-            store.get_account(pk2, Commitment::Confirmed).await.unwrap(),
+            store.get_account(pk2, Commitment::Confirmed).unwrap(),
             Some(account_2_slot2.clone())
         );
         assert_eq!(
-            store.get_account(pk2, Commitment::Finalized).await.unwrap(),
+            store.get_account(pk2, Commitment::Finalized).unwrap(),
             Some(account_2.clone())
         );
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Processed)
-                .await
                 .unwrap(),
             vec![account_2_slot2.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Confirmed)
-                .await
                 .unwrap(),
             vec![account_2_slot2.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Finalized)
-                .await
                 .unwrap(),
             vec![account_1.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_2, None, Commitment::Processed)
-                .await
                 .unwrap(),
             vec![account_1_slot2.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_2, None, Commitment::Confirmed)
-                .await
                 .unwrap(),
             vec![account_1_slot2.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_2, None, Commitment::Finalized)
-                .await
                 .unwrap(),
             vec![account_2.clone()]
         );
 
-        store
-            .process_slot_data(new_slot_info(2), Commitment::Finalized)
-            .await;
+        store.process_slot_data(new_slot_info(2), Commitment::Finalized);
         assert_eq!(
-            store.get_account(pk1, Commitment::Finalized).await.unwrap(),
+            store.get_account(pk1, Commitment::Finalized).unwrap(),
             Some(account_1_slot2.clone())
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await.unwrap(),
+            store.get_account(pk1, Commitment::Confirmed).unwrap(),
             Some(account_1_slot2.clone())
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await.unwrap(),
+            store.get_account(pk1, Commitment::Processed).unwrap(),
             Some(account_1_slot2.clone())
         );
         assert_eq!(
-            store.get_account(pk2, Commitment::Processed).await.unwrap(),
+            store.get_account(pk2, Commitment::Processed).unwrap(),
             Some(account_2_slot2.clone())
         );
         assert_eq!(
-            store.get_account(pk2, Commitment::Confirmed).await.unwrap(),
+            store.get_account(pk2, Commitment::Confirmed).unwrap(),
             Some(account_2_slot2.clone())
         );
         assert_eq!(
-            store.get_account(pk2, Commitment::Finalized).await.unwrap(),
+            store.get_account(pk2, Commitment::Finalized).unwrap(),
             Some(account_2_slot2.clone())
         );
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Processed)
-                .await
                 .unwrap(),
             vec![account_2_slot2.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Confirmed)
-                .await
                 .unwrap(),
             vec![account_2_slot2.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Finalized)
-                .await
                 .unwrap(),
             vec![account_2_slot2.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_2, None, Commitment::Processed)
-                .await
                 .unwrap(),
             vec![account_1_slot2.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_2, None, Commitment::Confirmed)
-                .await
                 .unwrap(),
             vec![account_1_slot2.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_2, None, Commitment::Finalized)
-                .await
                 .unwrap(),
             vec![account_1_slot2.clone()]
         );
@@ -1585,637 +1339,480 @@ mod tests {
         let account_1_slot5 = create_random_account(&mut rng, 5, pk1, program_3);
         let account_2_slot5 = create_random_account(&mut rng, 5, pk2, program_3);
         let account_3_slot5 = create_random_account(&mut rng, 5, pk3, program_1);
-        store
-            .update_account(account_1_slot5.clone(), Commitment::Processed)
-            .await;
-        store
-            .update_account(account_2_slot5.clone(), Commitment::Processed)
-            .await;
-        store
-            .update_account(account_3_slot5.clone(), Commitment::Processed)
-            .await;
+        store.update_account(account_1_slot5.clone(), Commitment::Processed);
+        store.update_account(account_2_slot5.clone(), Commitment::Processed);
+        store.update_account(account_3_slot5.clone(), Commitment::Processed);
 
         assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await.unwrap(),
+            store.get_account(pk1, Commitment::Processed).unwrap(),
             Some(account_1_slot5.clone())
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await.unwrap(),
+            store.get_account(pk1, Commitment::Confirmed).unwrap(),
             Some(account_1_slot2.clone())
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Finalized).await.unwrap(),
+            store.get_account(pk1, Commitment::Finalized).unwrap(),
             Some(account_1_slot2.clone())
         );
         assert_eq!(
-            store.get_account(pk2, Commitment::Processed).await.unwrap(),
+            store.get_account(pk2, Commitment::Processed).unwrap(),
             Some(account_2_slot5.clone())
         );
         assert_eq!(
-            store.get_account(pk2, Commitment::Confirmed).await.unwrap(),
+            store.get_account(pk2, Commitment::Confirmed).unwrap(),
             Some(account_2_slot2.clone())
         );
         assert_eq!(
-            store.get_account(pk2, Commitment::Finalized).await.unwrap(),
+            store.get_account(pk2, Commitment::Finalized).unwrap(),
             Some(account_2_slot2.clone())
         );
         assert_eq!(
-            store.get_account(pk3, Commitment::Processed).await.unwrap(),
+            store.get_account(pk3, Commitment::Processed).unwrap(),
             Some(account_3_slot5.clone())
         );
-        assert_eq!(
-            store.get_account(pk3, Commitment::Confirmed).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk3, Commitment::Finalized).await.unwrap(),
-            None
-        );
+        assert_eq!(store.get_account(pk3, Commitment::Confirmed).unwrap(), None);
+        assert_eq!(store.get_account(pk3, Commitment::Finalized).unwrap(), None);
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Processed)
-                .await
                 .unwrap(),
             vec![account_3_slot5.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Confirmed)
-                .await
                 .unwrap(),
             vec![account_2_slot2.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Finalized)
-                .await
                 .unwrap(),
             vec![account_2_slot2.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_2, None, Commitment::Processed)
-                .await
                 .unwrap(),
             vec![]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_2, None, Commitment::Confirmed)
-                .await
                 .unwrap(),
             vec![account_1_slot2.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_2, None, Commitment::Finalized)
-                .await
                 .unwrap(),
             vec![account_1_slot2.clone()]
         );
         assert_eq!(
-            store
-                .get_program_accounts(program_3, None, Commitment::Processed)
-                .await,
+            store.get_program_accounts(program_3, None, Commitment::Processed),
             Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
         );
         assert_eq!(
-            store
-                .get_program_accounts(program_3, None, Commitment::Confirmed)
-                .await,
+            store.get_program_accounts(program_3, None, Commitment::Confirmed),
             Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
         );
         assert_eq!(
-            store
-                .get_program_accounts(program_3, None, Commitment::Finalized)
-                .await,
+            store.get_program_accounts(program_3, None, Commitment::Finalized),
             Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
         );
 
-        store
-            .process_slot_data(new_slot_info(5), Commitment::Confirmed)
-            .await;
+        store.process_slot_data(new_slot_info(5), Commitment::Confirmed);
         // next slots/ change owner for account1 and account 2
         assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await.unwrap(),
+            store.get_account(pk1, Commitment::Processed).unwrap(),
             Some(account_1_slot5.clone())
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await.unwrap(),
+            store.get_account(pk1, Commitment::Confirmed).unwrap(),
             Some(account_1_slot5.clone())
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Finalized).await.unwrap(),
+            store.get_account(pk1, Commitment::Finalized).unwrap(),
             Some(account_1_slot2.clone())
         );
         assert_eq!(
-            store.get_account(pk2, Commitment::Processed).await.unwrap(),
+            store.get_account(pk2, Commitment::Processed).unwrap(),
             Some(account_2_slot5.clone())
         );
         assert_eq!(
-            store.get_account(pk2, Commitment::Confirmed).await.unwrap(),
+            store.get_account(pk2, Commitment::Confirmed).unwrap(),
             Some(account_2_slot5.clone())
         );
         assert_eq!(
-            store.get_account(pk2, Commitment::Finalized).await.unwrap(),
+            store.get_account(pk2, Commitment::Finalized).unwrap(),
             Some(account_2_slot2.clone())
         );
         assert_eq!(
-            store.get_account(pk3, Commitment::Processed).await.unwrap(),
+            store.get_account(pk3, Commitment::Processed).unwrap(),
             Some(account_3_slot5.clone())
         );
         assert_eq!(
-            store.get_account(pk3, Commitment::Confirmed).await.unwrap(),
+            store.get_account(pk3, Commitment::Confirmed).unwrap(),
             Some(account_3_slot5.clone())
         );
-        assert_eq!(
-            store.get_account(pk3, Commitment::Finalized).await.unwrap(),
-            None
-        );
+        assert_eq!(store.get_account(pk3, Commitment::Finalized).unwrap(), None);
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Processed)
-                .await
                 .unwrap(),
             vec![account_3_slot5.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Confirmed)
-                .await
                 .unwrap(),
             vec![account_3_slot5.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Finalized)
-                .await
                 .unwrap(),
             vec![account_2_slot2.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_2, None, Commitment::Processed)
-                .await
                 .unwrap(),
             vec![]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_2, None, Commitment::Confirmed)
-                .await
                 .unwrap(),
             vec![]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_2, None, Commitment::Finalized)
-                .await
                 .unwrap(),
             vec![account_1_slot2.clone()]
         );
         assert_eq!(
-            store
-                .get_program_accounts(program_3, None, Commitment::Processed)
-                .await,
+            store.get_program_accounts(program_3, None, Commitment::Processed),
             Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
         );
         assert_eq!(
-            store
-                .get_program_accounts(program_3, None, Commitment::Confirmed)
-                .await,
+            store.get_program_accounts(program_3, None, Commitment::Confirmed),
             Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
         );
         assert_eq!(
-            store
-                .get_program_accounts(program_3, None, Commitment::Finalized)
-                .await,
+            store.get_program_accounts(program_3, None, Commitment::Finalized),
             Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
         );
 
         // accounts deleted as they do not satisfy filter criterias
-        store
-            .process_slot_data(new_slot_info(5), Commitment::Finalized)
-            .await;
+        store.process_slot_data(new_slot_info(5), Commitment::Finalized);
+        assert_eq!(store.get_account(pk1, Commitment::Processed).unwrap(), None);
+        assert_eq!(store.get_account(pk1, Commitment::Confirmed).unwrap(), None);
+        assert_eq!(store.get_account(pk1, Commitment::Finalized).unwrap(), None);
+        assert_eq!(store.get_account(pk2, Commitment::Processed).unwrap(), None);
+        assert_eq!(store.get_account(pk2, Commitment::Confirmed).unwrap(), None);
+        assert_eq!(store.get_account(pk2, Commitment::Finalized).unwrap(), None);
         assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk1, Commitment::Finalized).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk2, Commitment::Processed).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk2, Commitment::Confirmed).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk2, Commitment::Finalized).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk3, Commitment::Processed).await.unwrap(),
+            store.get_account(pk3, Commitment::Processed).unwrap(),
             Some(account_3_slot5.clone())
         );
         assert_eq!(
-            store.get_account(pk3, Commitment::Confirmed).await.unwrap(),
+            store.get_account(pk3, Commitment::Confirmed).unwrap(),
             Some(account_3_slot5.clone())
         );
         assert_eq!(
-            store.get_account(pk3, Commitment::Finalized).await.unwrap(),
+            store.get_account(pk3, Commitment::Finalized).unwrap(),
             Some(account_3_slot5.clone())
         );
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Processed)
-                .await
                 .unwrap(),
             vec![account_3_slot5.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Confirmed)
-                .await
                 .unwrap(),
             vec![account_3_slot5.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Finalized)
-                .await
                 .unwrap(),
             vec![account_3_slot5.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_2, None, Commitment::Processed)
-                .await
                 .unwrap(),
             vec![]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_2, None, Commitment::Confirmed)
-                .await
                 .unwrap(),
             vec![]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_2, None, Commitment::Finalized)
-                .await
                 .unwrap(),
             vec![]
         );
         assert_eq!(
-            store
-                .get_program_accounts(program_3, None, Commitment::Processed)
-                .await,
+            store.get_program_accounts(program_3, None, Commitment::Processed),
             Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
         );
         assert_eq!(
-            store
-                .get_program_accounts(program_3, None, Commitment::Confirmed)
-                .await,
+            store.get_program_accounts(program_3, None, Commitment::Confirmed),
             Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
         );
         assert_eq!(
-            store
-                .get_program_accounts(program_3, None, Commitment::Finalized)
-                .await,
+            store.get_program_accounts(program_3, None, Commitment::Finalized),
             Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
         );
 
         let account_2_slot6 = create_random_account(&mut rng, 6, pk2, program_1);
-        store
-            .update_account(account_2_slot6.clone(), Commitment::Processed)
-            .await;
+        store.update_account(account_2_slot6.clone(), Commitment::Processed);
+        assert_eq!(store.get_account(pk1, Commitment::Processed).unwrap(), None);
+        assert_eq!(store.get_account(pk1, Commitment::Confirmed).unwrap(), None);
+        assert_eq!(store.get_account(pk1, Commitment::Finalized).unwrap(), None);
         assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk1, Commitment::Finalized).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk2, Commitment::Processed).await.unwrap(),
+            store.get_account(pk2, Commitment::Processed).unwrap(),
             Some(account_2_slot6.clone())
         );
+        assert_eq!(store.get_account(pk2, Commitment::Confirmed).unwrap(), None);
+        assert_eq!(store.get_account(pk2, Commitment::Finalized).unwrap(), None);
         assert_eq!(
-            store.get_account(pk2, Commitment::Confirmed).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk2, Commitment::Finalized).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk3, Commitment::Processed).await.unwrap(),
+            store.get_account(pk3, Commitment::Processed).unwrap(),
             Some(account_3_slot5.clone())
         );
         assert_eq!(
-            store.get_account(pk3, Commitment::Confirmed).await.unwrap(),
+            store.get_account(pk3, Commitment::Confirmed).unwrap(),
             Some(account_3_slot5.clone())
         );
         assert_eq!(
-            store.get_account(pk3, Commitment::Finalized).await.unwrap(),
+            store.get_account(pk3, Commitment::Finalized).unwrap(),
             Some(account_3_slot5.clone())
         );
         assert!(store
             .get_program_accounts(program_1, None, Commitment::Processed)
-            .await
             .unwrap()
             .contains(&account_2_slot6));
         assert!(store
             .get_program_accounts(program_1, None, Commitment::Processed)
-            .await
             .unwrap()
             .contains(&account_3_slot5));
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Confirmed)
-                .await
                 .unwrap(),
             vec![account_3_slot5.clone(),]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Finalized)
-                .await
                 .unwrap(),
             vec![account_3_slot5.clone(),]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_2, None, Commitment::Processed)
-                .await
                 .unwrap(),
             vec![]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_2, None, Commitment::Confirmed)
-                .await
                 .unwrap(),
             vec![]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_2, None, Commitment::Finalized)
-                .await
                 .unwrap(),
             vec![]
         );
         assert_eq!(
-            store
-                .get_program_accounts(program_3, None, Commitment::Processed)
-                .await,
+            store.get_program_accounts(program_3, None, Commitment::Processed),
             Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
         );
         assert_eq!(
-            store
-                .get_program_accounts(program_3, None, Commitment::Confirmed)
-                .await,
+            store.get_program_accounts(program_3, None, Commitment::Confirmed),
             Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
         );
         assert_eq!(
-            store
-                .get_program_accounts(program_3, None, Commitment::Finalized)
-                .await,
+            store.get_program_accounts(program_3, None, Commitment::Finalized),
             Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
         );
 
-        store
-            .process_slot_data(new_slot_info(6), Commitment::Confirmed)
-            .await;
+        store.process_slot_data(new_slot_info(6), Commitment::Confirmed);
+        assert_eq!(store.get_account(pk1, Commitment::Processed).unwrap(), None);
+        assert_eq!(store.get_account(pk1, Commitment::Confirmed).unwrap(), None);
+        assert_eq!(store.get_account(pk1, Commitment::Finalized).unwrap(), None);
         assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk1, Commitment::Finalized).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk2, Commitment::Processed).await.unwrap(),
+            store.get_account(pk2, Commitment::Processed).unwrap(),
             Some(account_2_slot6.clone())
         );
         assert_eq!(
-            store.get_account(pk2, Commitment::Confirmed).await.unwrap(),
+            store.get_account(pk2, Commitment::Confirmed).unwrap(),
             Some(account_2_slot6.clone())
         );
+        assert_eq!(store.get_account(pk2, Commitment::Finalized).unwrap(), None);
         assert_eq!(
-            store.get_account(pk2, Commitment::Finalized).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk3, Commitment::Processed).await.unwrap(),
+            store.get_account(pk3, Commitment::Processed).unwrap(),
             Some(account_3_slot5.clone())
         );
         assert_eq!(
-            store.get_account(pk3, Commitment::Confirmed).await.unwrap(),
+            store.get_account(pk3, Commitment::Confirmed).unwrap(),
             Some(account_3_slot5.clone())
         );
         assert_eq!(
-            store.get_account(pk3, Commitment::Finalized).await.unwrap(),
+            store.get_account(pk3, Commitment::Finalized).unwrap(),
             Some(account_3_slot5.clone())
         );
         assert!(store
             .get_program_accounts(program_1, None, Commitment::Processed)
-            .await
             .unwrap()
             .contains(&account_2_slot6));
         assert!(store
             .get_program_accounts(program_1, None, Commitment::Processed)
-            .await
             .unwrap()
             .contains(&account_3_slot5));
         assert!(store
             .get_program_accounts(program_1, None, Commitment::Confirmed)
-            .await
             .unwrap()
             .contains(&account_2_slot6));
         assert!(store
             .get_program_accounts(program_1, None, Commitment::Confirmed)
-            .await
             .unwrap()
             .contains(&account_3_slot5));
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Finalized)
-                .await
                 .unwrap(),
             vec![account_3_slot5.clone(),]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_2, None, Commitment::Processed)
-                .await
                 .unwrap(),
             vec![]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_2, None, Commitment::Confirmed)
-                .await
                 .unwrap(),
             vec![]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_2, None, Commitment::Finalized)
-                .await
                 .unwrap(),
             vec![]
         );
         assert_eq!(
-            store
-                .get_program_accounts(program_3, None, Commitment::Processed)
-                .await,
+            store.get_program_accounts(program_3, None, Commitment::Processed),
             Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
         );
         assert_eq!(
-            store
-                .get_program_accounts(program_3, None, Commitment::Confirmed)
-                .await,
+            store.get_program_accounts(program_3, None, Commitment::Confirmed),
             Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
         );
         assert_eq!(
-            store
-                .get_program_accounts(program_3, None, Commitment::Finalized)
-                .await,
+            store.get_program_accounts(program_3, None, Commitment::Finalized),
             Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
         );
 
-        store
-            .process_slot_data(new_slot_info(6), Commitment::Finalized)
-            .await;
+        store.process_slot_data(new_slot_info(6), Commitment::Finalized);
+        assert_eq!(store.get_account(pk1, Commitment::Processed).unwrap(), None);
+        assert_eq!(store.get_account(pk1, Commitment::Confirmed).unwrap(), None);
+        assert_eq!(store.get_account(pk1, Commitment::Finalized).unwrap(), None);
         assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk1, Commitment::Finalized).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk2, Commitment::Processed).await.unwrap(),
+            store.get_account(pk2, Commitment::Processed).unwrap(),
             Some(account_2_slot6.clone())
         );
         assert_eq!(
-            store.get_account(pk2, Commitment::Confirmed).await.unwrap(),
+            store.get_account(pk2, Commitment::Confirmed).unwrap(),
             Some(account_2_slot6.clone())
         );
         assert_eq!(
-            store.get_account(pk2, Commitment::Finalized).await.unwrap(),
+            store.get_account(pk2, Commitment::Finalized).unwrap(),
             Some(account_2_slot6.clone())
         );
         assert_eq!(
-            store.get_account(pk3, Commitment::Processed).await.unwrap(),
+            store.get_account(pk3, Commitment::Processed).unwrap(),
             Some(account_3_slot5.clone())
         );
         assert_eq!(
-            store.get_account(pk3, Commitment::Confirmed).await.unwrap(),
+            store.get_account(pk3, Commitment::Confirmed).unwrap(),
             Some(account_3_slot5.clone())
         );
         assert_eq!(
-            store.get_account(pk3, Commitment::Finalized).await.unwrap(),
+            store.get_account(pk3, Commitment::Finalized).unwrap(),
             Some(account_3_slot5.clone())
         );
         assert!(store
             .get_program_accounts(program_1, None, Commitment::Processed)
-            .await
             .unwrap()
             .contains(&account_2_slot6));
         assert!(store
             .get_program_accounts(program_1, None, Commitment::Processed)
-            .await
             .unwrap()
             .contains(&account_3_slot5));
         assert!(store
             .get_program_accounts(program_1, None, Commitment::Confirmed)
-            .await
             .unwrap()
             .contains(&account_2_slot6));
         assert!(store
             .get_program_accounts(program_1, None, Commitment::Confirmed)
-            .await
             .unwrap()
             .contains(&account_3_slot5));
         assert!(store
             .get_program_accounts(program_1, None, Commitment::Finalized)
-            .await
             .unwrap()
             .contains(&account_2_slot6));
         assert!(store
             .get_program_accounts(program_1, None, Commitment::Finalized)
-            .await
             .unwrap()
             .contains(&account_3_slot5));
         assert_eq!(
             store
                 .get_program_accounts(program_2, None, Commitment::Processed)
-                .await
                 .unwrap(),
             vec![]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_2, None, Commitment::Confirmed)
-                .await
                 .unwrap(),
             vec![]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_2, None, Commitment::Finalized)
-                .await
                 .unwrap(),
             vec![]
         );
         assert_eq!(
-            store
-                .get_program_accounts(program_3, None, Commitment::Processed)
-                .await,
+            store.get_program_accounts(program_3, None, Commitment::Processed),
             Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
         );
         assert_eq!(
-            store
-                .get_program_accounts(program_3, None, Commitment::Confirmed)
-                .await,
+            store.get_program_accounts(program_3, None, Commitment::Confirmed),
             Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
         );
         assert_eq!(
-            store
-                .get_program_accounts(program_3, None, Commitment::Finalized)
-                .await,
+            store.get_program_accounts(program_3, None, Commitment::Finalized),
             Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
         );
     }
 
-    #[tokio::test]
-    pub async fn test_account_deletions() {
+    #[test]
+    pub fn test_account_deletions() {
         let program_1 = Pubkey::new_unique();
         let filter_store = new_filter_store(vec![AccountFilter {
             program_id: Some(program_1),
@@ -2229,38 +1826,35 @@ mod tests {
 
         // add and test account
         let account_1 = create_random_account_with_write_version(&mut rng, 1, pk1, program_1, 1);
-        store.initilize_or_update_account(account_1.clone()).await;
+        store.initilize_or_update_account(account_1.clone());
         assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await.unwrap(),
+            store.get_account(pk1, Commitment::Processed).unwrap(),
             Some(account_1.clone())
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await.unwrap(),
+            store.get_account(pk1, Commitment::Confirmed).unwrap(),
             Some(account_1.clone())
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Finalized).await.unwrap(),
+            store.get_account(pk1, Commitment::Finalized).unwrap(),
             Some(account_1.clone())
         );
 
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Processed)
-                .await
                 .unwrap(),
             vec![account_1.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Confirmed)
-                .await
                 .unwrap(),
             vec![account_1.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Finalized)
-                .await
                 .unwrap(),
             vec![account_1.clone()]
         );
@@ -2268,9 +1862,7 @@ mod tests {
         // delete account 1
         let pk2 = Pubkey::new_unique();
         let account_1_2 = create_random_account_with_write_version(&mut rng, 2, pk1, program_1, 2);
-        store
-            .update_account(account_1_2, Commitment::Processed)
-            .await;
+        store.update_account(account_1_2, Commitment::Processed);
         let account_1_3 = AccountData {
             pubkey: pk1,
             account: Arc::new(Account {
@@ -2295,167 +1887,105 @@ mod tests {
             updated_slot: 2,
             write_version: 4,
         };
-        store
-            .update_account(account_1_3.clone(), Commitment::Processed)
-            .await;
-        store
-            .update_account(random_deletion.clone(), Commitment::Processed)
-            .await;
+        store.update_account(account_1_3.clone(), Commitment::Processed);
+        store.update_account(random_deletion.clone(), Commitment::Processed);
 
+        assert_eq!(store.get_account(pk1, Commitment::Processed).unwrap(), None);
         assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await.unwrap(),
+            store.get_account(pk1, Commitment::Confirmed).unwrap(),
             Some(account_1.clone())
         );
         assert_eq!(
-            store.get_account(pk1, Commitment::Finalized).await.unwrap(),
+            store.get_account(pk1, Commitment::Finalized).unwrap(),
             Some(account_1.clone())
         );
-        assert_eq!(
-            store.get_account(pk2, Commitment::Processed).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk2, Commitment::Confirmed).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk2, Commitment::Finalized).await.unwrap(),
-            None
-        );
+        assert_eq!(store.get_account(pk2, Commitment::Processed).unwrap(), None);
+        assert_eq!(store.get_account(pk2, Commitment::Confirmed).unwrap(), None);
+        assert_eq!(store.get_account(pk2, Commitment::Finalized).unwrap(), None);
 
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Processed)
-                .await
                 .unwrap(),
             vec![]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Confirmed)
-                .await
                 .unwrap(),
             vec![account_1.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Finalized)
-                .await
                 .unwrap(),
             vec![account_1.clone()]
         );
 
-        let updated = store
-            .process_slot_data(new_slot_info(2), Commitment::Confirmed)
-            .await;
+        let updated = store.process_slot_data(new_slot_info(2), Commitment::Confirmed);
         assert_eq!(updated, vec![account_1_3.clone()]);
 
+        assert_eq!(store.get_account(pk1, Commitment::Processed).unwrap(), None);
+        assert_eq!(store.get_account(pk1, Commitment::Confirmed).unwrap(), None);
         assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk1, Commitment::Finalized).await.unwrap(),
+            store.get_account(pk1, Commitment::Finalized).unwrap(),
             Some(account_1.clone())
         );
-        assert_eq!(
-            store.get_account(pk2, Commitment::Processed).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk2, Commitment::Confirmed).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk2, Commitment::Finalized).await.unwrap(),
-            None
-        );
+        assert_eq!(store.get_account(pk2, Commitment::Processed).unwrap(), None);
+        assert_eq!(store.get_account(pk2, Commitment::Confirmed).unwrap(), None);
+        assert_eq!(store.get_account(pk2, Commitment::Finalized).unwrap(), None);
 
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Processed)
-                .await
                 .unwrap(),
             vec![]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Confirmed)
-                .await
                 .unwrap(),
             vec![]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Finalized)
-                .await
                 .unwrap(),
             vec![account_1.clone()]
         );
 
-        let updated = store
-            .process_slot_data(new_slot_info(2), Commitment::Finalized)
-            .await;
+        let updated = store.process_slot_data(new_slot_info(2), Commitment::Finalized);
         assert_eq!(updated, vec![account_1_3]);
 
-        assert_eq!(
-            store.get_account(pk1, Commitment::Processed).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk1, Commitment::Confirmed).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk1, Commitment::Finalized).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk2, Commitment::Processed).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk2, Commitment::Confirmed).await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_account(pk2, Commitment::Finalized).await.unwrap(),
-            None
-        );
+        assert_eq!(store.get_account(pk1, Commitment::Processed).unwrap(), None);
+        assert_eq!(store.get_account(pk1, Commitment::Confirmed).unwrap(), None);
+        assert_eq!(store.get_account(pk1, Commitment::Finalized).unwrap(), None);
+        assert_eq!(store.get_account(pk2, Commitment::Processed).unwrap(), None);
+        assert_eq!(store.get_account(pk2, Commitment::Confirmed).unwrap(), None);
+        assert_eq!(store.get_account(pk2, Commitment::Finalized).unwrap(), None);
 
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Processed)
-                .await
                 .unwrap(),
             vec![]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Confirmed)
-                .await
                 .unwrap(),
             vec![]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Finalized)
-                .await
                 .unwrap(),
             vec![]
         );
     }
 
-    #[tokio::test]
-    pub async fn test_snapshot_creation_and_loading() {
+    #[test]
+    pub fn test_snapshot_creation_and_loading() {
         let program_1 = Pubkey::new_unique();
         let program_2 = Pubkey::new_unique();
         let filter_store = new_filter_store(vec![
@@ -2483,51 +2013,36 @@ mod tests {
         let account3 = create_random_account(&mut rng, 1, pk3, program_2);
         let account4 = create_random_account(&mut rng, 1, pk4, program_2);
 
-        store.initilize_or_update_account(account1).await;
-        store.initilize_or_update_account(account2).await;
-        store.initilize_or_update_account(account3).await;
-        store.initilize_or_update_account(account4).await;
+        store.initilize_or_update_account(account1);
+        store.initilize_or_update_account(account2);
+        store.initilize_or_update_account(account3);
+        store.initilize_or_update_account(account4);
 
         let account1 = create_random_account(&mut rng, 2, pk1, program_1);
         let account2 = create_random_account(&mut rng, 2, pk2, program_1);
         let account3 = create_random_account(&mut rng, 2, pk3, program_2);
         let account4 = create_random_account(&mut rng, 2, pk4, program_2);
 
-        store
-            .update_account(account1.clone(), Commitment::Processed)
-            .await;
-        store
-            .update_account(account2.clone(), Commitment::Processed)
-            .await;
-        store
-            .update_account(account3.clone(), Commitment::Processed)
-            .await;
-        store
-            .update_account(account4.clone(), Commitment::Processed)
-            .await;
+        store.update_account(account1.clone(), Commitment::Processed);
+        store.update_account(account2.clone(), Commitment::Processed);
+        store.update_account(account3.clone(), Commitment::Processed);
+        store.update_account(account4.clone(), Commitment::Processed);
         let account1_bis = create_random_account(&mut rng, 3, pk1, program_1);
         let account3_bis = create_random_account(&mut rng, 3, pk3, program_2);
-        store
-            .update_account(account1_bis.clone(), Commitment::Processed)
-            .await;
-        store
-            .update_account(account3_bis.clone(), Commitment::Processed)
-            .await;
+        store.update_account(account1_bis.clone(), Commitment::Processed);
+        store.update_account(account3_bis.clone(), Commitment::Processed);
 
-        store
-            .process_slot_data(
-                SlotInfo {
-                    parent: 1,
-                    slot: 2,
-                    root: 0,
-                },
-                Commitment::Finalized,
-            )
-            .await;
+        store.process_slot_data(
+            SlotInfo {
+                parent: 1,
+                slot: 2,
+                root: 0,
+            },
+            Commitment::Finalized,
+        );
 
         let gpa_1 = store
             .get_program_accounts(program_1, None, Commitment::Processed)
-            .await
             .unwrap();
         assert!(
             gpa_1 == vec![account1_bis.clone(), account2.clone()]
@@ -2536,7 +2051,6 @@ mod tests {
 
         let gpa_2 = store
             .get_program_accounts(program_2, None, Commitment::Processed)
-            .await
             .unwrap();
         assert!(
             gpa_2 == vec![account3_bis.clone(), account4.clone()]
@@ -2544,35 +2058,30 @@ mod tests {
         );
 
         // create snapshot and load
-        let snapshot_program_1 = store.create_snapshot(program_1).await.unwrap();
-        let snapshot_program_2 = store.create_snapshot(program_2).await.unwrap();
+        let snapshot_program_1 = store.create_snapshot(program_1).unwrap();
+        let snapshot_program_2 = store.create_snapshot(program_2).unwrap();
 
         let snapshot_store = InmemoryAccountStore::new(filter_store);
         // is empty
         let gpa_1 = snapshot_store
             .get_program_accounts(program_1, None, Commitment::Processed)
-            .await
             .unwrap();
         assert_eq!(gpa_1, vec![]);
 
         let gpa_2 = snapshot_store
             .get_program_accounts(program_2, None, Commitment::Processed)
-            .await
             .unwrap();
         assert_eq!(gpa_2, vec![]);
 
         snapshot_store
             .load_from_snapshot(program_1, snapshot_program_1)
-            .await
             .unwrap();
         snapshot_store
             .load_from_snapshot(program_2, snapshot_program_2)
-            .await
             .unwrap();
 
         let gpa_1 = snapshot_store
             .get_program_accounts(program_1, None, Commitment::Processed)
-            .await
             .unwrap();
         assert!(
             gpa_1 == vec![account1.clone(), account2.clone()]
@@ -2581,7 +2090,6 @@ mod tests {
 
         let gpa_2 = snapshot_store
             .get_program_accounts(program_2, None, Commitment::Processed)
-            .await
             .unwrap();
         assert!(
             gpa_2 == vec![account3.clone(), account4.clone()]

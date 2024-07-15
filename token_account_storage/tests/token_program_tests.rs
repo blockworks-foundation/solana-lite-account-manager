@@ -14,8 +14,8 @@ use solana_sdk::pubkey::Pubkey;
 
 mod utils;
 
-#[tokio::test]
-pub async fn test_saving_and_loading_token_account() {
+#[test]
+pub fn test_saving_and_loading_token_account() {
     tracing_subscriber::fmt::init();
     let inmemory_token_storage = Arc::new(InmemoryTokenAccountStorage::default());
     let token_store = TokenProgramAccountsStorage::new(inmemory_token_storage);
@@ -30,10 +30,8 @@ pub async fn test_saving_and_loading_token_account() {
     let token_account_data =
         utils::create_token_account_data(token_account_pk, token_account_params, 2, 2);
 
-    token_store.initilize_or_update_account(mint_account).await;
-    token_store
-        .initilize_or_update_account(token_account_data)
-        .await;
+    token_store.initilize_or_update_account(mint_account);
+    token_store.initilize_or_update_account(token_account_data);
 
     assert_eq!(
         utils::parse_account_data_to_token_params(
@@ -42,7 +40,6 @@ pub async fn test_saving_and_loading_token_account() {
                     token_account_pk,
                     lite_account_manager_common::commitment::Commitment::Confirmed
                 )
-                .await
                 .unwrap()
                 .unwrap()
         ),
@@ -55,7 +52,6 @@ pub async fn test_saving_and_loading_token_account() {
                     token_account_pk,
                     lite_account_manager_common::commitment::Commitment::Processed
                 )
-                .await
                 .unwrap()
                 .unwrap()
         ),
@@ -68,7 +64,6 @@ pub async fn test_saving_and_loading_token_account() {
                     token_account_pk,
                     lite_account_manager_common::commitment::Commitment::Finalized
                 )
-                .await
                 .unwrap()
                 .unwrap()
         ),
@@ -82,7 +77,6 @@ pub async fn test_saving_and_loading_token_account() {
                     mint,
                     lite_account_manager_common::commitment::Commitment::Confirmed
                 )
-                .await
                 .unwrap()
                 .unwrap()
         ),
@@ -95,7 +89,6 @@ pub async fn test_saving_and_loading_token_account() {
                     mint,
                     lite_account_manager_common::commitment::Commitment::Processed
                 )
-                .await
                 .unwrap()
                 .unwrap()
         ),
@@ -108,7 +101,6 @@ pub async fn test_saving_and_loading_token_account() {
                     mint,
                     lite_account_manager_common::commitment::Commitment::Finalized
                 )
-                .await
                 .unwrap()
                 .unwrap()
         ),
@@ -124,59 +116,49 @@ pub async fn test_saving_and_loading_token_account() {
         utils::create_token_account_data(token_account_pk, token_account_params_2, 3, 3);
     let account_data_3 =
         utils::create_token_account_data(token_account_pk, token_account_params_3, 4, 4);
-    token_store
-        .update_account(
-            token_account_data_2.clone(),
-            lite_account_manager_common::commitment::Commitment::Processed,
-        )
-        .await;
+    token_store.update_account(
+        token_account_data_2.clone(),
+        lite_account_manager_common::commitment::Commitment::Processed,
+    );
 
-    token_store
-        .update_account(
-            account_data_3.clone(),
-            lite_account_manager_common::commitment::Commitment::Processed,
-        )
-        .await;
+    token_store.update_account(
+        account_data_3.clone(),
+        lite_account_manager_common::commitment::Commitment::Processed,
+    );
 
     assert_eq!(
-        token_store
-            .process_slot_data(
-                SlotInfo {
-                    slot: 3,
-                    parent: 2,
-                    root: 0,
-                },
-                Commitment::Processed
-            )
-            .await,
+        token_store.process_slot_data(
+            SlotInfo {
+                slot: 3,
+                parent: 2,
+                root: 0,
+            },
+            Commitment::Processed
+        ),
         vec![]
     );
 
     assert_eq!(
-        token_store
-            .process_slot_data(
-                SlotInfo {
-                    slot: 4,
-                    parent: 3,
-                    root: 0,
-                },
-                Commitment::Processed
-            )
-            .await,
+        token_store.process_slot_data(
+            SlotInfo {
+                slot: 4,
+                parent: 3,
+                root: 0,
+            },
+            Commitment::Processed
+        ),
         vec![]
     );
 
     assert_eq!(
-        token_store
-            .process_slot_data(
-                SlotInfo {
-                    slot: 3,
-                    parent: 2,
-                    root: 0,
-                },
-                Commitment::Confirmed
-            )
-            .await,
+        token_store.process_slot_data(
+            SlotInfo {
+                slot: 3,
+                parent: 2,
+                root: 0,
+            },
+            Commitment::Confirmed
+        ),
         vec![token_account_data_2.clone()]
     );
 
@@ -187,7 +169,6 @@ pub async fn test_saving_and_loading_token_account() {
                     token_account_pk,
                     lite_account_manager_common::commitment::Commitment::Processed
                 )
-                .await
                 .unwrap()
                 .unwrap()
         ),
@@ -200,7 +181,6 @@ pub async fn test_saving_and_loading_token_account() {
                     token_account_pk,
                     lite_account_manager_common::commitment::Commitment::Confirmed
                 )
-                .await
                 .unwrap()
                 .unwrap()
         ),
@@ -213,7 +193,6 @@ pub async fn test_saving_and_loading_token_account() {
                     token_account_pk,
                     lite_account_manager_common::commitment::Commitment::Finalized
                 )
-                .await
                 .unwrap()
                 .unwrap()
         ),
@@ -227,7 +206,6 @@ pub async fn test_saving_and_loading_token_account() {
                     mint,
                     lite_account_manager_common::commitment::Commitment::Confirmed
                 )
-                .await
                 .unwrap()
                 .unwrap()
         ),
@@ -240,7 +218,6 @@ pub async fn test_saving_and_loading_token_account() {
                     mint,
                     lite_account_manager_common::commitment::Commitment::Processed
                 )
-                .await
                 .unwrap()
                 .unwrap()
         ),
@@ -253,7 +230,6 @@ pub async fn test_saving_and_loading_token_account() {
                     mint,
                     lite_account_manager_common::commitment::Commitment::Finalized
                 )
-                .await
                 .unwrap()
                 .unwrap()
         ),
@@ -261,42 +237,36 @@ pub async fn test_saving_and_loading_token_account() {
     );
 
     assert_eq!(
-        token_store
-            .process_slot_data(
-                SlotInfo {
-                    slot: 4,
-                    parent: 3,
-                    root: 0,
-                },
-                Commitment::Confirmed
-            )
-            .await,
+        token_store.process_slot_data(
+            SlotInfo {
+                slot: 4,
+                parent: 3,
+                root: 0,
+            },
+            Commitment::Confirmed
+        ),
         vec![account_data_3.clone()]
     );
 
     assert_eq!(
-        token_store
-            .process_slot_data(
-                SlotInfo {
-                    slot: 3,
-                    parent: 2,
-                    root: 0,
-                },
-                Commitment::Finalized
-            )
-            .await,
+        token_store.process_slot_data(
+            SlotInfo {
+                slot: 3,
+                parent: 2,
+                root: 0,
+            },
+            Commitment::Finalized
+        ),
         vec![token_account_data_2.clone()]
     );
 
     let mint_2 = utils::MintCreationParams::create_random(&mut rng, 2000);
 
     let mint_account_2 = utils::create_mint_account_data(mint, mint_2, 5, 5);
-    token_store
-        .update_account(
-            mint_account_2.clone(),
-            lite_account_manager_common::commitment::Commitment::Processed,
-        )
-        .await;
+    token_store.update_account(
+        mint_account_2.clone(),
+        lite_account_manager_common::commitment::Commitment::Processed,
+    );
 
     assert_eq!(
         utils::parse_account_data_to_token_params(
@@ -305,7 +275,6 @@ pub async fn test_saving_and_loading_token_account() {
                     token_account_pk,
                     lite_account_manager_common::commitment::Commitment::Processed
                 )
-                .await
                 .unwrap()
                 .unwrap()
         ),
@@ -318,7 +287,6 @@ pub async fn test_saving_and_loading_token_account() {
                     token_account_pk,
                     lite_account_manager_common::commitment::Commitment::Confirmed
                 )
-                .await
                 .unwrap()
                 .unwrap()
         ),
@@ -331,7 +299,6 @@ pub async fn test_saving_and_loading_token_account() {
                     token_account_pk,
                     lite_account_manager_common::commitment::Commitment::Finalized
                 )
-                .await
                 .unwrap()
                 .unwrap()
         ),
@@ -345,7 +312,6 @@ pub async fn test_saving_and_loading_token_account() {
                     mint,
                     lite_account_manager_common::commitment::Commitment::Confirmed
                 )
-                .await
                 .unwrap()
                 .unwrap()
         ),
@@ -358,7 +324,6 @@ pub async fn test_saving_and_loading_token_account() {
                     mint,
                     lite_account_manager_common::commitment::Commitment::Processed
                 )
-                .await
                 .unwrap()
                 .unwrap()
         ),
@@ -371,7 +336,6 @@ pub async fn test_saving_and_loading_token_account() {
                     mint,
                     lite_account_manager_common::commitment::Commitment::Finalized
                 )
-                .await
                 .unwrap()
                 .unwrap()
         ),
@@ -392,9 +356,7 @@ pub async fn test_saving_and_loading_token_account() {
         write_version: 6,
     };
 
-    token_store
-        .update_account(deleted_account.clone(), Commitment::Processed)
-        .await;
+    token_store.update_account(deleted_account.clone(), Commitment::Processed);
 
     assert_eq!(
         token_store
@@ -402,7 +364,6 @@ pub async fn test_saving_and_loading_token_account() {
                 token_account_pk,
                 lite_account_manager_common::commitment::Commitment::Processed
             )
-            .await
             .unwrap(),
         None
     );
@@ -413,7 +374,6 @@ pub async fn test_saving_and_loading_token_account() {
                     token_account_pk,
                     lite_account_manager_common::commitment::Commitment::Confirmed
                 )
-                .await
                 .unwrap()
                 .unwrap()
         ),
@@ -426,7 +386,6 @@ pub async fn test_saving_and_loading_token_account() {
                     token_account_pk,
                     lite_account_manager_common::commitment::Commitment::Finalized
                 )
-                .await
                 .unwrap()
                 .unwrap()
         ),
@@ -434,29 +393,25 @@ pub async fn test_saving_and_loading_token_account() {
     );
 
     assert_eq!(
-        token_store
-            .process_slot_data(
-                SlotInfo {
-                    slot: 6,
-                    parent: 5,
-                    root: 0,
-                },
-                Commitment::Confirmed
-            )
-            .await,
+        token_store.process_slot_data(
+            SlotInfo {
+                slot: 6,
+                parent: 5,
+                root: 0,
+            },
+            Commitment::Confirmed
+        ),
         vec![]
     );
 
-    let accounts_updated = token_store
-        .process_slot_data(
-            SlotInfo {
-                slot: 5,
-                parent: 4,
-                root: 0,
-            },
-            Commitment::Finalized,
-        )
-        .await;
+    let accounts_updated = token_store.process_slot_data(
+        SlotInfo {
+            slot: 5,
+            parent: 4,
+            root: 0,
+        },
+        Commitment::Finalized,
+    );
 
     assert!(
         accounts_updated == vec![mint_account_2.clone(), account_data_3.clone()]
@@ -469,7 +424,6 @@ pub async fn test_saving_and_loading_token_account() {
                 token_account_pk,
                 lite_account_manager_common::commitment::Commitment::Processed
             )
-            .await
             .unwrap(),
         None
     );
@@ -479,7 +433,6 @@ pub async fn test_saving_and_loading_token_account() {
                 token_account_pk,
                 lite_account_manager_common::commitment::Commitment::Confirmed
             )
-            .await
             .unwrap(),
         None
     );
@@ -491,7 +444,6 @@ pub async fn test_saving_and_loading_token_account() {
                     token_account_pk,
                     lite_account_manager_common::commitment::Commitment::Finalized
                 )
-                .await
                 .unwrap()
                 .unwrap()
         ),
@@ -499,16 +451,14 @@ pub async fn test_saving_and_loading_token_account() {
     );
 
     assert_eq!(
-        token_store
-            .process_slot_data(
-                SlotInfo {
-                    slot: 6,
-                    parent: 5,
-                    root: 0,
-                },
-                Commitment::Finalized
-            )
-            .await,
+        token_store.process_slot_data(
+            SlotInfo {
+                slot: 6,
+                parent: 5,
+                root: 0,
+            },
+            Commitment::Finalized
+        ),
         vec![]
     );
 
@@ -518,7 +468,6 @@ pub async fn test_saving_and_loading_token_account() {
                 token_account_pk,
                 lite_account_manager_common::commitment::Commitment::Processed
             )
-            .await
             .unwrap(),
         None
     );
@@ -528,7 +477,6 @@ pub async fn test_saving_and_loading_token_account() {
                 token_account_pk,
                 lite_account_manager_common::commitment::Commitment::Confirmed
             )
-            .await
             .unwrap(),
         None
     );
@@ -539,7 +487,6 @@ pub async fn test_saving_and_loading_token_account() {
                 token_account_pk,
                 lite_account_manager_common::commitment::Commitment::Finalized
             )
-            .await
             .unwrap(),
         None
     );

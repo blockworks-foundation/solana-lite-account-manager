@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{mpsc::Receiver, Arc};
 
 use serde::{Deserialize, Serialize};
 use solana_rpc_client_api::filter::RpcFilterType;
@@ -6,8 +6,6 @@ use solana_sdk::{
     account::Account as SolanaAccount, commitment_config::CommitmentConfig, pubkey::Pubkey,
     slot_history::Slot,
 };
-use tokio::sync::broadcast::Receiver;
-
 // 64 MB
 const MAX_ACCOUNT_SIZE: usize = 64 * 1024 * 1024;
 

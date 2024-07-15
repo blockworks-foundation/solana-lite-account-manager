@@ -2,11 +2,10 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet, VecDeque},
     sync::{
         atomic::{AtomicU32, AtomicU64, Ordering},
-        Arc,
+        Arc, RwLock,
     },
 };
 
-use async_trait::async_trait;
 use dashmap::DashMap;
 use itertools::Itertools;
 use lite_account_manager_common::{
@@ -20,7 +19,6 @@ use lite_account_manager_common::{
 use prometheus::{opts, register_int_gauge, IntGauge};
 use serde::{Deserialize, Serialize};
 use solana_sdk::{clock::Slot, pubkey::Pubkey};
-use tokio::sync::RwLock;
 
 use crate::{
     account_types::{MintAccount, MintIndex, MultiSig, Program, TokenAccount, TokenAccountIndex},
@@ -60,14 +58,14 @@ struct ProcessedAccountStore {
 }
 
 impl ProcessedAccountStore {
-    pub async fn insert_account(
+    pub fn insert_account(
         &self,
         account_pk: Pubkey,
         processed_account: TokenProgramAccountType,
         write_version: u64,
         slot: Slot,
     ) -> bool {
-        let mut lk = self.processed_slot_accounts.write().await;
+        let mut lk = self.processed_slot_accounts.write().unwrap();
         match lk.get_mut(&slot) {
             Some(processed_account_by_slot) => {
                 match processed_account_by_slot
@@ -125,14 +123,14 @@ impl ProcessedAccountStore {
         }
     }
 
-    pub async fn update_slot_info(&self, slot_info: SlotInfo) {
+    pub fn update_slot_info(&self, slot_info: SlotInfo) {
         log::debug!(
             "update slot info slot : {}, parent: {}, root: {}",
             slot_info.slot,
             slot_info.parent,
             slot_info.root
         );
-        let mut lk = self.processed_slot_accounts.write().await;
+        let mut lk = self.processed_slot_accounts.write().unwrap();
         match lk.get_mut(&slot_info.slot) {
             Some(processed_account_by_slot) => {
                 processed_account_by_slot.slot_parent = Some(slot_info.parent);
@@ -149,12 +147,12 @@ impl ProcessedAccountStore {
         }
     }
 
-    pub async fn get_processed_for_slot(
+    pub fn get_processed_for_slot(
         &self,
         slot_info: SlotInfo,
         mints_by_index: &Arc<DashMap<MintIndex, MintAccount>>,
     ) -> Vec<AccountData> {
-        let lk = self.processed_slot_accounts.read().await;
+        let lk = self.processed_slot_accounts.read().unwrap();
         match lk.get(&slot_info.slot) {
             Some(acc) => acc
                 .processed_accounts
@@ -171,17 +169,17 @@ impl ProcessedAccountStore {
             None => {
                 log::error!("confirmed slot not found in cache : {}", slot_info.slot);
                 drop(lk);
-                self.update_slot_info(slot_info).await;
+                self.update_slot_info(slot_info);
                 vec![]
             }
         }
     }
 
     // returns list of accounts that are finalized
-    pub async fn finalize(&self, slot: u64) -> Vec<(ProcessedAccount, u64)> {
+    pub fn finalize(&self, slot: u64) -> Vec<(ProcessedAccount, u64)> {
         log::debug!("finalizing slot : {slot}");
         let mut map_of_accounts: HashMap<Pubkey, (ProcessedAccount, u64)> = HashMap::new();
-        let mut lk = self.processed_slot_accounts.write().await;
+        let mut lk = self.processed_slot_accounts.write().unwrap();
         let mut process_slot = Some(slot);
         while let Some(current_slot) = process_slot {
             match lk.entry(current_slot) {
@@ -225,14 +223,14 @@ impl ProcessedAccountStore {
         return_vec
     }
 
-    pub async fn get_confirmed_accounts(
+    pub fn get_confirmed_accounts(
         &self,
         account_pks: Vec<Pubkey>,
         return_list: &mut [Option<(ProcessedAccount, u64)>],
         confirmed_slot: Slot,
     ) {
         let mut process_slot = Some(confirmed_slot);
-        let lk = self.processed_slot_accounts.read().await;
+        let lk = self.processed_slot_accounts.read().unwrap();
         while let Some(current_slot) = process_slot {
             match lk.get(&current_slot) {
                 Some(processed_accounts) => {
@@ -257,7 +255,7 @@ impl ProcessedAccountStore {
         }
     }
 
-    pub async fn get_accounts(
+    pub fn get_accounts(
         &self,
         account_pks: Vec<Pubkey>,
         commitment: Commitment,
@@ -266,7 +264,7 @@ impl ProcessedAccountStore {
         let mut return_list = vec![None; account_pks.len()];
         match commitment {
             Commitment::Processed => {
-                let lk = self.processed_slot_accounts.read().await;
+                let lk = self.processed_slot_accounts.read().unwrap();
                 // iterate backwards on all the processed slots until we reach confirmed slot
                 for (slot, processed_account_slots) in lk.iter().rev() {
                     log::debug!("getting processed account at slot : {}", slot);
@@ -288,15 +286,13 @@ impl ProcessedAccountStore {
                         }
                     } else {
                         drop(lk);
-                        self.get_confirmed_accounts(account_pks, &mut return_list, confirmed_slot)
-                            .await;
+                        self.get_confirmed_accounts(account_pks, &mut return_list, confirmed_slot);
                         return return_list;
                     }
                 }
             }
             Commitment::Confirmed => {
                 self.get_confirmed_accounts(account_pks, &mut return_list, confirmed_slot)
-                    .await
             }
             Commitment::Finalized => unreachable!(),
         };
@@ -335,15 +331,13 @@ impl TokenProgramAccountsStorage {
     }
 
     // treat account for finalized commitment
-    pub async fn add_account_finalized(&self, account: TokenProgramAccountType) -> bool {
+    pub fn add_account_finalized(&self, account: TokenProgramAccountType) -> bool {
         match account {
             TokenProgramAccountType::TokenAccount(token_account) => {
                 let token_account_owner = token_account.owner;
                 let mint_index = token_account.mint;
-                let (token_index, is_added) = self
-                    .token_accounts_storage
-                    .save_or_update(token_account)
-                    .await;
+                let (token_index, is_added) =
+                    self.token_accounts_storage.save_or_update(token_account);
                 if is_added {
                     // add account to the indexes
                     // add account index in accounts_index_by_mint map
@@ -398,14 +392,14 @@ impl TokenProgramAccountsStorage {
                 } else if self.mints_index_by_pubkey.remove(&account_pk).is_some() {
                     // do nothing multisig account is removed
                 } else {
-                    self.token_accounts_storage.delete(&account_pk).await;
+                    self.token_accounts_storage.delete(&account_pk);
                 }
             }
         }
         true
     }
 
-    pub async fn is_token_program_account(&self, account_data: &AccountData) -> bool {
+    pub fn is_token_program_account(&self, account_data: &AccountData) -> bool {
         self.mints_index_by_pubkey
             .contains_key(&account_data.pubkey)
             || self.multisigs.contains_key(&account_data.pubkey)
@@ -414,11 +408,10 @@ impl TokenProgramAccountsStorage {
             || self
                 .token_accounts_storage
                 .contains(&account_data.pubkey)
-                .await
                 .is_some()
     }
 
-    pub async fn get_account_finalized(&self, account_pk: Pubkey) -> Option<AccountData> {
+    pub fn get_account_finalized(&self, account_pk: Pubkey) -> Option<AccountData> {
         if let Some(multisig) = self.multisigs.get(&account_pk) {
             return Some(token_multisig_to_solana_account(
                 &multisig,
@@ -437,7 +430,7 @@ impl TokenProgramAccountsStorage {
             ));
         }
 
-        if let Some(token_account) = self.token_accounts_storage.get_by_pubkey(&account_pk).await {
+        if let Some(token_account) = self.token_accounts_storage.get_by_pubkey(&account_pk) {
             if token_account.is_deleted {
                 return None;
             }
@@ -451,7 +444,7 @@ impl TokenProgramAccountsStorage {
         None
     }
 
-    pub async fn get_program_accounts_finalized(
+    pub fn get_program_accounts_finalized(
         &self,
         program_pubkey: Pubkey,
         account_filters: Option<Vec<AccountFilterType>>,
@@ -478,8 +471,7 @@ impl TokenProgramAccountsStorage {
                     Some(indexes) => {
                         let token_accounts = self
                             .token_accounts_storage
-                            .get_by_index(indexes)
-                            .await?
+                            .get_by_index(indexes)?
                             .iter()
                             .filter(|acc| {
                                 // filter by mint if necessary
@@ -514,8 +506,7 @@ impl TokenProgramAccountsStorage {
                                 .collect::<HashSet<u32>>();
                             let token_accounts = self
                                 .token_accounts_storage
-                                .get_by_index(indexes)
-                                .await?
+                                .get_by_index(indexes)?
                                 .iter()
                                 .filter_map(|token_account| {
                                     token_account_to_solana_account(
@@ -563,10 +554,9 @@ struct TokenProgramSnapshot {
     pub token_accounts: Vec<Vec<u8>>,
 }
 
-#[async_trait]
 impl AccountStorageInterface for TokenProgramAccountsStorage {
-    async fn update_account(&self, account_data: AccountData, commitment: Commitment) -> bool {
-        if !self.is_token_program_account(&account_data).await {
+    fn update_account(&self, account_data: AccountData, commitment: Commitment) -> bool {
+        if !self.is_token_program_account(&account_data) {
             return false;
         }
 
@@ -587,21 +577,19 @@ impl AccountStorageInterface for TokenProgramAccountsStorage {
             }
         };
         if commitment == Commitment::Processed || commitment == Commitment::Confirmed {
-            self.processed_storage
-                .insert_account(
-                    account_data.pubkey,
-                    token_program_account,
-                    account_data.write_version,
-                    account_data.updated_slot,
-                )
-                .await
+            self.processed_storage.insert_account(
+                account_data.pubkey,
+                token_program_account,
+                account_data.write_version,
+                account_data.updated_slot,
+            )
         } else {
-            self.add_account_finalized(token_program_account).await
+            self.add_account_finalized(token_program_account)
         }
     }
 
-    async fn initilize_or_update_account(&self, account_data: AccountData) {
-        if !self.is_token_program_account(&account_data).await {
+    fn initilize_or_update_account(&self, account_data: AccountData) {
+        if !self.is_token_program_account(&account_data) {
             return;
         }
 
@@ -618,10 +606,10 @@ impl AccountStorageInterface for TokenProgramAccountsStorage {
                 return;
             }
         };
-        self.add_account_finalized(token_program_account).await;
+        self.add_account_finalized(token_program_account);
     }
 
-    async fn get_account(
+    fn get_account(
         &self,
         account_pk: Pubkey,
         commitment: Commitment,
@@ -636,7 +624,6 @@ impl AccountStorageInterface for TokenProgramAccountsStorage {
                         commitment,
                         self.confirmed_slot.load(Ordering::Relaxed),
                     )
-                    .await
                     .get(0)
                     .unwrap()
                 {
@@ -646,14 +633,14 @@ impl AccountStorageInterface for TokenProgramAccountsStorage {
                         0,
                         &self.mints_by_index,
                     )),
-                    None => Ok(self.get_account_finalized(account_pk).await),
+                    None => Ok(self.get_account_finalized(account_pk)),
                 }
             }
-            Commitment::Finalized => Ok(self.get_account_finalized(account_pk).await),
+            Commitment::Finalized => Ok(self.get_account_finalized(account_pk)),
         }
     }
 
-    async fn get_program_accounts(
+    fn get_program_accounts(
         &self,
         program_pubkey: Pubkey,
         account_filters: Option<Vec<AccountFilterType>>,
@@ -663,17 +650,15 @@ impl AccountStorageInterface for TokenProgramAccountsStorage {
             return Err(AccountLoadingError::WrongIndex);
         }
         // get all accounts for finalized commitment and update them if necessary
-        let mut account_data = self
-            .get_program_accounts_finalized(program_pubkey, account_filters)
-            .await?;
+        let mut account_data =
+            self.get_program_accounts_finalized(program_pubkey, account_filters)?;
         let confirmed_slot = self.confirmed_slot.load(Ordering::Relaxed);
         if commitment == Commitment::Processed || commitment == Commitment::Confirmed {
             // get list of all pks to search
             let pks = account_data.iter().map(|x| x.pubkey).collect_vec();
-            let processed_accounts = self
-                .processed_storage
-                .get_accounts(pks, commitment, confirmed_slot)
-                .await;
+            let processed_accounts =
+                self.processed_storage
+                    .get_accounts(pks, commitment, confirmed_slot);
             let mut to_remove = vec![];
             for (index, processed_account) in processed_accounts.iter().enumerate() {
                 if let Some((processed_account, slot)) = processed_account {
@@ -703,36 +688,31 @@ impl AccountStorageInterface for TokenProgramAccountsStorage {
         Ok(account_data)
     }
 
-    async fn process_slot_data(
-        &self,
-        slot_info: SlotInfo,
-        commitment: Commitment,
-    ) -> Vec<AccountData> {
+    fn process_slot_data(&self, slot_info: SlotInfo, commitment: Commitment) -> Vec<AccountData> {
         match commitment {
             Commitment::Processed => {
                 log::debug!("process slot data  : {slot_info:?}");
-                self.processed_storage.update_slot_info(slot_info).await;
+                self.processed_storage.update_slot_info(slot_info);
                 vec![]
             }
             Commitment::Confirmed => {
                 log::debug!("confirm slot data  : {slot_info:?}");
                 if self.confirmed_slot.load(Ordering::Relaxed) < slot_info.slot {
                     self.confirmed_slot.store(slot_info.slot, Ordering::Relaxed);
-                    self.processed_storage.update_slot_info(slot_info).await;
+                    self.processed_storage.update_slot_info(slot_info);
                 }
                 self.processed_storage
                     .get_processed_for_slot(slot_info, &self.mints_by_index)
-                    .await
             }
             Commitment::Finalized => {
                 log::debug!("finalize slot data  : {slot_info:?}");
                 if self.finalized_slot.load(Ordering::Relaxed) < slot_info.slot {
-                    self.processed_storage.update_slot_info(slot_info).await;
+                    self.processed_storage.update_slot_info(slot_info);
                     self.finalized_slot.store(slot_info.slot, Ordering::Relaxed);
                 }
 
                 // move data from processed storage to main storage
-                let finalized_accounts = self.processed_storage.finalize(slot_info.slot).await;
+                let finalized_accounts = self.processed_storage.finalize(slot_info.slot);
 
                 let accounts_notifications = finalized_accounts
                     .iter()
@@ -746,15 +726,14 @@ impl AccountStorageInterface for TokenProgramAccountsStorage {
                     })
                     .collect_vec();
                 for (finalized_account, _) in finalized_accounts {
-                    self.add_account_finalized(finalized_account.processed_account)
-                        .await;
+                    self.add_account_finalized(finalized_account.processed_account);
                 }
                 accounts_notifications
             }
         }
     }
 
-    async fn create_snapshot(&self, program_id: Pubkey) -> Result<Vec<u8>, AccountLoadingError> {
+    fn create_snapshot(&self, program_id: Pubkey) -> Result<Vec<u8>, AccountLoadingError> {
         let program = if program_id == spl_token::id() {
             Program::TokenProgram
         } else if program_id == spl_token_2022::id() {
@@ -776,7 +755,7 @@ impl AccountStorageInterface for TokenProgramAccountsStorage {
             .collect_vec();
 
         let multisigs = self.multisigs.iter().map(|ite| ite.clone()).collect_vec();
-        let token_accounts = self.token_accounts_storage.create_snapshot(program).await?;
+        let token_accounts = self.token_accounts_storage.create_snapshot(program)?;
 
         let snapshot = TokenProgramSnapshot {
             mints,
@@ -785,15 +764,15 @@ impl AccountStorageInterface for TokenProgramAccountsStorage {
         };
         let binary = bincode::serialize(&snapshot).unwrap();
         drop(snapshot);
-        Ok(lz4::block::compress(
+        lz4::block::compress(
             &binary,
             Some(lz4::block::CompressionMode::HIGHCOMPRESSION(8)),
             false,
         )
-        .map_err(|_| AccountLoadingError::CompressionIssues)?)
+        .map_err(|_| AccountLoadingError::CompressionIssues)
     }
 
-    async fn load_from_snapshot(
+    fn load_from_snapshot(
         &self,
         _program_id: Pubkey,
         snapshot: Vec<u8>,
@@ -835,10 +814,7 @@ impl AccountStorageInterface for TokenProgramAccountsStorage {
             let new_mint_index = *mint_mapping.get(&token_account.mint).unwrap();
             token_account.mint = new_mint_index;
             let owner = token_account.owner;
-            let (index, is_added) = self
-                .token_accounts_storage
-                .save_or_update(token_account)
-                .await;
+            let (index, is_added) = self.token_accounts_storage.save_or_update(token_account);
             if is_added {
                 match self.account_by_owner_pubkey.get_mut(&owner.into()) {
                     Some(mut accs) => accs.push(index),

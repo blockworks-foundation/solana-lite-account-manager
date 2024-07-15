@@ -1,11 +1,3 @@
-use std::{
-    collections::{BTreeMap, HashMap, HashSet},
-    sync::Arc,
-    time::Duration,
-};
-
-use async_trait::async_trait;
-use futures::lock::Mutex;
 use lite_account_manager_common::{
     account_data::AccountData,
     account_filter::{AccountFilter, AccountFilterType},
@@ -18,7 +10,12 @@ use lite_account_manager_common::{
 };
 use prometheus::{opts, register_int_gauge, IntGauge};
 use solana_sdk::pubkey::Pubkey;
-use tokio::sync::Notify;
+use std::sync::Condvar;
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 lazy_static::lazy_static! {
     static ref NUMBER_OF_ACCOUNTS_ON_DEMAND: IntGauge =
@@ -34,8 +31,8 @@ pub struct AccountsOnDemand {
     accounts_source: Arc<dyn AccountsSourceInterface>,
     mutable_filters: Arc<MutableFilterStore>,
     accounts_storage: Arc<dyn AccountStorageInterface>,
-    accounts_in_loading: Arc<Mutex<HashMap<Pubkey, Arc<Notify>>>>,
-    gpa_in_loading: Arc<Mutex<BTreeMap<GpaAccountKey, Arc<Notify>>>>,
+    accounts_in_loading: Arc<Mutex<HashMap<Pubkey, Arc<Condvar>>>>,
+    gpa_in_loading: Arc<Mutex<BTreeMap<GpaAccountKey, Arc<Condvar>>>>,
 }
 
 impl AccountsOnDemand {
@@ -54,68 +51,50 @@ impl AccountsOnDemand {
     }
 }
 
-#[async_trait]
 impl AccountStorageInterface for AccountsOnDemand {
-    async fn update_account(&self, account_data: AccountData, commitment: Commitment) -> bool {
+    fn update_account(&self, account_data: AccountData, commitment: Commitment) -> bool {
         self.accounts_storage
             .update_account(account_data, commitment)
-            .await
     }
 
-    async fn initilize_or_update_account(&self, account_data: AccountData) {
+    fn initilize_or_update_account(&self, account_data: AccountData) {
         self.accounts_storage
             .initilize_or_update_account(account_data)
-            .await
     }
 
-    async fn get_account(
+    fn get_account(
         &self,
         account_pk: Pubkey,
         commitment: Commitment,
     ) -> Result<Option<AccountData>, AccountLoadingError> {
-        match self
-            .accounts_storage
-            .get_account(account_pk, commitment)
-            .await?
-        {
+        match self.accounts_storage.get_account(account_pk, commitment)? {
             Some(account_data) => Ok(Some(account_data)),
             None => {
                 // account does not exist in account store
                 // first check if we have already subscribed to the required account
                 // This is to avoid resetting geyser subscription because of accounts that do not exists.
-                let mut lk = self.accounts_in_loading.lock().await;
+                let mut lk = self.accounts_in_loading.lock().unwrap();
                 match lk.get(&account_pk).cloned() {
                     Some(loading_account) => {
-                        drop(lk);
-                        match tokio::time::timeout(
-                            Duration::from_secs(10),
-                            loading_account.notified(),
-                        )
-                        .await
-                        {
-                            Ok(_) => {
-                                self.accounts_storage
-                                    .get_account(account_pk, commitment)
-                                    .await
-                            }
+                        match loading_account.wait_timeout(lk, Duration::from_secs(10)) {
+                            Ok(_) => self.accounts_storage.get_account(account_pk, commitment),
                             Err(_timeout) => Err(AccountLoadingError::OperationTimeOut),
                         }
                     }
                     None => {
                         // account is not loading
-                        if self.mutable_filters.contains_account(account_pk).await {
+                        if self.mutable_filters.contains_account(account_pk) {
                             // account was already tried to be loaded but does not exists
                             Ok(None)
                         } else {
                             // update account loading map
                             // create a notify for accounts under loading
-                            lk.insert(account_pk, Arc::new(Notify::new()));
+                            lk.insert(account_pk, Arc::new(Condvar::new()));
                             log::debug!("subscribing to accounts update : {}", account_pk);
                             let mut hash_set = HashSet::new();
                             hash_set.insert(account_pk);
                             self.accounts_source
                                 .subscribe_accounts(hash_set)
-                                .await
                                 .map_err(|_| AccountLoadingError::ErrorSubscribingAccount)?;
                             drop(lk);
 
@@ -127,20 +106,17 @@ impl AccountStorageInterface for AccountsOnDemand {
                             }];
                             self.accounts_source
                                 .save_snapshot(self.accounts_storage.clone(), account_filter)
-                                .await
                                 .map_err(|_| AccountLoadingError::ErrorCreatingSnapshot)?;
                             // update loading lock
                             {
-                                let mut write_lock = self.accounts_in_loading.lock().await;
+                                let mut write_lock = self.accounts_in_loading.lock().unwrap();
                                 let notify = write_lock.remove(&account_pk);
                                 drop(write_lock);
                                 if let Some(notify) = notify {
-                                    notify.notify_waiters();
+                                    notify.notify_all();
                                 }
                             }
-                            self.accounts_storage
-                                .get_account(account_pk, commitment)
-                                .await
+                            self.accounts_storage.get_account(account_pk, commitment)
                         }
                     }
                 }
@@ -148,7 +124,7 @@ impl AccountStorageInterface for AccountsOnDemand {
         }
     }
 
-    async fn get_program_accounts(
+    fn get_program_accounts(
         &self,
         program_id: Pubkey,
         filters: Option<Vec<AccountFilterType>>,
@@ -161,27 +137,23 @@ impl AccountStorageInterface for AccountsOnDemand {
         };
         // accounts on demand will fetch gPA if they do not exist
         // it will first compare with existing filters and do the necessary if needed
-        if self.mutable_filters.contains_filter(&account_filter).await {
+        if self.mutable_filters.contains_filter(&account_filter) {
             self.accounts_storage
                 .get_program_accounts(program_id, filters.clone(), commitment)
-                .await
         } else {
             // subsribing to new gpa accounts
-            let mut lk = self.gpa_in_loading.lock().await;
+            let mut lk = self.gpa_in_loading.lock().unwrap();
             match lk
                 .get(&(program_id, filters.clone().unwrap_or_default()))
                 .cloned()
             {
                 Some(loading_account) => {
-                    drop(lk);
-                    match tokio::time::timeout(Duration::from_secs(10), loading_account.notified())
-                        .await
-                    {
-                        Ok(_) => {
-                            self.accounts_storage
-                                .get_program_accounts(program_id, filters.clone(), commitment)
-                                .await
-                        }
+                    match loading_account.wait_timeout(lk, Duration::from_secs(10)) {
+                        Ok(_) => self.accounts_storage.get_program_accounts(
+                            program_id,
+                            filters.clone(),
+                            commitment,
+                        ),
                         Err(_timeout) => {
                             // todo replace with error
                             log::error!("gPA on program : {}", program_id.to_string());
@@ -194,58 +166,50 @@ impl AccountStorageInterface for AccountsOnDemand {
                     // create a notify for accounts under loading
                     lk.insert(
                         (program_id, filters.clone().unwrap_or_default()),
-                        Arc::new(Notify::new()),
+                        Arc::new(Condvar::new()),
                     );
                     self.accounts_source
                         .subscribe_program_accounts(program_id, filters.clone())
-                        .await
                         .map_err(|_| AccountLoadingError::ErrorSubscribingAccount)?;
                     drop(lk);
                     self.mutable_filters
-                        .add_account_filters(&vec![account_filter.clone()])
-                        .await;
+                        .add_account_filters(&vec![account_filter.clone()]);
 
                     self.accounts_source
                         .save_snapshot(self.accounts_storage.clone(), vec![account_filter])
-                        .await
                         .map_err(|_| AccountLoadingError::ErrorCreatingSnapshot)?;
                     // update loading lock
                     {
-                        let mut write_lock = self.gpa_in_loading.lock().await;
+                        let mut write_lock = self.gpa_in_loading.lock().unwrap();
                         let notify =
                             write_lock.remove(&(program_id, filters.clone().unwrap_or_default()));
                         drop(write_lock);
                         if let Some(notify) = notify {
-                            notify.notify_waiters();
+                            notify.notify_all();
                         }
                     }
                     self.accounts_storage
                         .get_program_accounts(program_id, filters, commitment)
-                        .await
                 }
             }
         }
     }
 
-    async fn process_slot_data(
-        &self,
-        slot_info: SlotInfo,
-        commitment: Commitment,
-    ) -> Vec<AccountData> {
+    fn process_slot_data(&self, slot_info: SlotInfo, commitment: Commitment) -> Vec<AccountData> {
         self.accounts_storage
             .process_slot_data(slot_info, commitment)
-            .await
     }
 
-    async fn create_snapshot(&self, program_id: Pubkey) -> Result<Vec<u8>, AccountLoadingError> {
-        self.accounts_storage.create_snapshot(program_id).await
+    fn create_snapshot(&self, program_id: Pubkey) -> Result<Vec<u8>, AccountLoadingError> {
+        self.accounts_storage.create_snapshot(program_id)
     }
 
-    async fn load_from_snapshot(
+    fn load_from_snapshot(
         &self,
         program_id: Pubkey,
         snapshot: Vec<u8>,
     ) -> Result<(), AccountLoadingError> {
-        self.load_from_snapshot(program_id, snapshot).await
+        self.accounts_storage
+            .load_from_snapshot(program_id, snapshot)
     }
 }
