@@ -16,3 +16,4 @@ serde_json = {workspace = true}
 bs58 = {workspace = true}
 base64 = {workspace = true}
 anyhow = {workspace = true}
+log = {workspace = true}

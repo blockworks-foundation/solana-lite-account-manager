@@ -45,7 +45,17 @@ impl Data {
     pub fn data(&self) -> Vec<u8> {
         match self {
             Data::Uncompressed(d) => d.clone(),
-            Data::Lz4 { binary, .. } => lz4::block::decompress(binary, None).unwrap(),
+            Data::Lz4 { binary, len } => match lz4::block::decompress(binary, None) {
+                Ok(res) => res,
+                Err(e) => {
+                    log::error!(
+                        "error {e:?} decompressing data of size {}, data_size_set: {}",
+                        binary.len(),
+                        len
+                    );
+                    panic!()
+                }
+            },
             Data::Zstd { binary, .. } => zstd::bulk::decompress(binary, MAX_ACCOUNT_SIZE).unwrap(),
         }
     }

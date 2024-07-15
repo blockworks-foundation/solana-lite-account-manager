@@ -220,11 +220,11 @@ impl AccountStorageInterface for InmemoryAccountStore {
     ) -> Result<Option<AccountData>, AccountLoadingError> {
         match self.account_store.entry(account_pk) {
             dashmap::mapref::entry::Entry::Occupied(occ) => {
-                let acc = occ.get();
-                let acc = acc.get_account_data(commitment);
-                if let Some(account) = &acc {
-                    if account.account.lamports > 0 {
-                        Ok(acc)
+                let account = occ.get().get_account_data(commitment);
+                drop(occ);
+                if let Some(account_data) = &account {
+                    if account_data.account.lamports > 0 {
+                        Ok(account)
                     } else {
                         Ok(None)
                     }
@@ -256,9 +256,10 @@ impl AccountStorageInterface for InmemoryAccountStore {
         match self.accounts_by_owner.entry(program_pubkey) {
             dashmap::mapref::entry::Entry::Occupied(occ) => {
                 let mut return_vec = vec![];
-                for program_account in occ.get().iter() {
-                    let account_data = self.get_account(*program_account, commitment).await;
-                    if let Ok(Some(account_data)) = account_data {
+                let program_pubkeys = occ.get();
+                for program_account in program_pubkeys.iter() {
+                    let account_data = self.get_account(*program_account, commitment).await?;
+                    if let Some(account_data) = account_data {
                         // recheck program owner and filters
                         if account_data.account.owner.eq(&program_pubkey) {
                             match &account_filters {
