@@ -461,15 +461,21 @@ impl TokenProgramAccountsStorage {
         if let Some(account_filters) = account_filters {
             let (owner, mint) = get_spl_token_owner_mint_filter(&program_pubkey, &account_filters);
             if let Some(owner) = owner {
-                match self.account_by_owner_pubkey.get(&owner.into()) {
-                    Some(token_acc_indexes) => {
-                        let indexes = token_acc_indexes
-                            .value()
+                let indexes = match self.account_by_owner_pubkey.entry(owner.into()) {
+                    dashmap::mapref::entry::Entry::Occupied(token_acc_indexes) => Some(
+                        token_acc_indexes
+                            .get()
                             .iter()
                             .cloned()
-                            .collect::<HashSet<_>>();
-                        let mint =
-                            mint.map(|pk| *self.mints_index_by_pubkey.get(&pk).unwrap().value());
+                            .collect::<HashSet<_>>(),
+                    ),
+                    dashmap::mapref::entry::Entry::Vacant(_) => None,
+                };
+
+                let mint = mint.map(|pk| *self.mints_index_by_pubkey.get(&pk).unwrap().value());
+
+                match indexes {
+                    Some(indexes) => {
                         let token_accounts = self
                             .token_accounts_storage
                             .get_by_index(indexes)

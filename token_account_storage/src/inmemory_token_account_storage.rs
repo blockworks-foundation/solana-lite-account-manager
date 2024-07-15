@@ -39,9 +39,9 @@ pub struct InmemoryTokenAccountStorage {
 #[async_trait]
 impl TokenAccountStorageInterface for InmemoryTokenAccountStorage {
     async fn contains(&self, pubkey: &Pubkey) -> Option<TokenAccountIndex> {
-        match self.pubkey_to_index.get(&pubkey.into()) {
-            Some(x) => {
-                let value = x.value();
+        match self.pubkey_to_index.entry(pubkey.into()) {
+            dashmap::mapref::entry::Entry::Occupied(occ) => {
+                let value = occ.get();
                 if value.len() > 1 {
                     let lk = self.token_accounts.read().await;
                     for index in value {
@@ -56,7 +56,7 @@ impl TokenAccountStorageInterface for InmemoryTokenAccountStorage {
                     Some(value[0])
                 }
             }
-            None => None,
+            dashmap::mapref::entry::Entry::Vacant(_) => None,
         }
     }
 
@@ -111,19 +111,20 @@ impl TokenAccountStorageInterface for InmemoryTokenAccountStorage {
     }
 
     async fn get_by_pubkey(&self, pubkey: &Pubkey) -> Option<TokenAccount> {
-        if let Some(acc) = self.pubkey_to_index.get(&pubkey.into()) {
-            let indexes = acc.value();
-            let lk = self.token_accounts.read().await;
-            for index in indexes {
-                let binary = lk.get(*index as usize).unwrap();
-                if TokenAccount::get_pubkey_from_binary(binary) == *pubkey {
-                    let token_account: TokenAccount = TokenAccount::from_bytes(binary);
-                    return Some(token_account);
+        match self.pubkey_to_index.entry(pubkey.into()) {
+            dashmap::mapref::entry::Entry::Occupied(occ) => {
+                let indexes = occ.get();
+                let lk = self.token_accounts.read().await;
+                for index in indexes {
+                    let binary = lk.get(*index as usize).unwrap();
+                    if TokenAccount::get_pubkey_from_binary(binary) == *pubkey {
+                        let token_account: TokenAccount = TokenAccount::from_bytes(binary);
+                        return Some(token_account);
+                    }
                 }
+                None
             }
-            None
-        } else {
-            None
+            dashmap::mapref::entry::Entry::Vacant(_) => None,
         }
     }
 

@@ -253,30 +253,31 @@ impl AccountStorageInterface for InmemoryAccountStore {
         {
             return Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters);
         }
-        if let Some(program_accounts) = self.accounts_by_owner.get(&program_pubkey) {
-            let mut return_vec = vec![];
-            for program_account in program_accounts.iter() {
-                let account_data = self.get_account(*program_account, commitment).await;
-                if let Ok(Some(account_data)) = account_data {
-                    // recheck program owner and filters
-                    if account_data.account.owner.eq(&program_pubkey) {
-                        match &account_filters {
-                            Some(filters) => {
-                                let data = account_data.account.data.data();
-                                if filters.iter().all(|filter| filter.allows(&data)) {
+        match self.accounts_by_owner.entry(program_pubkey) {
+            dashmap::mapref::entry::Entry::Occupied(occ) => {
+                let mut return_vec = vec![];
+                for program_account in occ.get().iter() {
+                    let account_data = self.get_account(*program_account, commitment).await;
+                    if let Ok(Some(account_data)) = account_data {
+                        // recheck program owner and filters
+                        if account_data.account.owner.eq(&program_pubkey) {
+                            match &account_filters {
+                                Some(filters) => {
+                                    let data = account_data.account.data.data();
+                                    if filters.iter().all(|filter| filter.allows(&data)) {
+                                        return_vec.push(account_data.clone());
+                                    }
+                                }
+                                None => {
                                     return_vec.push(account_data.clone());
                                 }
-                            }
-                            None => {
-                                return_vec.push(account_data.clone());
                             }
                         }
                     }
                 }
+                Ok(return_vec)
             }
-            Ok(return_vec)
-        } else {
-            Ok(vec![])
+            dashmap::mapref::entry::Entry::Vacant(_) => Ok(vec![]),
         }
     }
 
