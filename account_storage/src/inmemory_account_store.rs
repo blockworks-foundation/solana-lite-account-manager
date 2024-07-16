@@ -282,7 +282,7 @@ impl AccountStorageInterface for InmemoryAccountStore {
     }
 
     fn process_slot_data(&self, slot_info: SlotInfo, commitment: Commitment) -> Vec<AccountData> {
-        let slot = slot_info.slot;
+        let slot: u64 = slot_info.slot;
         let writable_accounts = {
             let mut lk = self.slots_status.lock().unwrap();
             let mut current_slot = Some((slot, Some(slot_info.parent)));
@@ -365,7 +365,7 @@ impl AccountStorageInterface for InmemoryAccountStore {
                 dashmap::mapref::entry::Entry::Occupied(mut occ) => {
                     if let Some((account_data, prev_account_data)) = occ
                         .get_mut()
-                        .promote_slot_commitment(writable_account, update_slot, commitment)
+                        .promote_slot_commitment(update_slot, commitment)
                     {
                         if let Some(prev_account_data) = prev_account_data {
                             // check if owner has changed
@@ -379,15 +379,9 @@ impl AccountStorageInterface for InmemoryAccountStore {
                             {
                                 occ.remove();
                             }
-
-                            //check if account data has changed
-                            if prev_account_data != account_data {
-                                updated_accounts.push(account_data);
-                            }
-                        } else {
-                            // account has been confirmed first time
-                            updated_accounts.push(account_data);
                         }
+                        // account has been confirmed first time
+                        updated_accounts.push(account_data);
                     }
                 }
                 dashmap::mapref::entry::Entry::Vacant(_) => {

@@ -5,7 +5,7 @@ use lite_account_manager_common::{
     account_filter::AccountFilterType,
     commitment::Commitment,
 };
-use solana_sdk::{clock::Slot, pubkey::Pubkey};
+use solana_sdk::clock::Slot;
 
 #[derive(Default)]
 pub struct AccountDataByCommitment {
@@ -20,6 +20,7 @@ impl AccountDataByCommitment {
     pub fn new(data: AccountData, commitment: Commitment) -> Self {
         let mut processed_accounts = BTreeMap::new();
         processed_accounts.insert(data.updated_slot, data.clone());
+
         AccountDataByCommitment {
             processed_accounts,
             confirmed_account: if commitment == Commitment::Confirmed
@@ -176,7 +177,6 @@ impl AccountDataByCommitment {
             Commitment::Finalized => {
                 if update_confirmed {
                     self.confirmed_account = Some(data.clone());
-                    updated = true;
                 }
                 if update_finalized {
                     self.finalized_account = Some(data);
@@ -193,32 +193,59 @@ impl AccountDataByCommitment {
     // returns promoted account
     pub fn promote_slot_commitment(
         &mut self,
-        _pubkey: Pubkey,
         slot: Slot,
         commitment: Commitment,
     ) -> Option<(AccountData, Option<AccountData>)> {
-        if let Some(account_data) = self.processed_accounts.get(&slot).cloned() {
+        if let Some(account_data) = self.processed_accounts.get(&slot) {
             match commitment {
                 Commitment::Processed => {
                     // do nothing
                     None
                 }
-                Commitment::Confirmed => {
-                    if self
-                        .confirmed_account
-                        .as_ref()
-                        .map(|acc| acc.updated_slot)
-                        .unwrap_or_default()
-                        < slot
-                    {
-                        let prev_data = self.confirmed_account.clone();
-                        self.confirmed_account = Some(account_data.clone());
-                        Some((account_data, prev_data))
-                    } else {
-                        None
+                Commitment::Confirmed => match self.confirmed_account.take() {
+                    Some(prev_account_data) => {
+                        if prev_account_data.updated_slot < account_data.updated_slot {
+                            self.confirmed_account = Some(account_data.clone());
+                            Some((account_data.clone(), Some(prev_account_data)))
+                        } else {
+                            self.confirmed_account = Some(prev_account_data);
+                            None
+                        }
                     }
-                }
+                    None => {
+                        self.confirmed_account = Some(account_data.clone());
+                        Some((account_data.clone(), None))
+                    }
+                },
                 Commitment::Finalized => {
+                    // update confirmed if needed
+                    match &self.confirmed_account {
+                        Some(confirmed_account) => {
+                            if confirmed_account.updated_slot < account_data.updated_slot {
+                                self.confirmed_account = Some(account_data.clone());
+                            }
+                        }
+                        None => {
+                            self.confirmed_account = Some(account_data.clone());
+                        }
+                    }
+
+                    let result = match self.finalized_account.take() {
+                        Some(prev_account_data) => {
+                            if prev_account_data.updated_slot < account_data.updated_slot {
+                                self.finalized_account = Some(account_data.clone());
+                                Some((account_data.clone(), Some(prev_account_data)))
+                            } else {
+                                self.finalized_account = Some(prev_account_data);
+                                None
+                            }
+                        }
+                        None => {
+                            self.finalized_account = Some(account_data.clone());
+                            Some((account_data.clone(), None))
+                        }
+                    };
+
                     // slot finalized remove old processed slot data
                     while self.processed_accounts.len() > 1
                         && self
@@ -226,35 +253,11 @@ impl AccountDataByCommitment {
                             .first_key_value()
                             .map(|(s, _)| *s)
                             .unwrap_or(u64::MAX)
-                            <= slot
+                            < slot
                     {
                         self.processed_accounts.pop_first();
                     }
-
-                    if self
-                        .finalized_account
-                        .as_ref()
-                        .map(|acc| acc.updated_slot)
-                        .unwrap_or_default()
-                        < slot
-                    {
-                        let prev_data = self.finalized_account.clone();
-                        self.finalized_account = Some(account_data.clone());
-
-                        // check confirmed slot too and update if too old
-                        if self
-                            .confirmed_account
-                            .as_ref()
-                            .map(|acc| acc.updated_slot)
-                            .unwrap_or_default()
-                            < slot
-                        {
-                            self.confirmed_account = Some(account_data.clone());
-                        }
-                        Some((account_data, prev_data))
-                    } else {
-                        None
-                    }
+                    result
                 }
             }
         } else if commitment == Commitment::Finalized {
@@ -265,7 +268,7 @@ impl AccountDataByCommitment {
                     .first_key_value()
                     .map(|(s, _)| *s)
                     .unwrap_or(u64::MAX)
-                    <= slot
+                    < slot
             {
                 self.processed_accounts.pop_first();
             }
