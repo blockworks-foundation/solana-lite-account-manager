@@ -1,6 +1,10 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
-use lite_account_manager_common::{account_data::AccountData, commitment::Commitment};
+use lite_account_manager_common::{
+    account_data::{self, Account, AccountData},
+    account_filter::AccountFilterType,
+    commitment::Commitment,
+};
 use solana_sdk::{clock::Slot, pubkey::Pubkey};
 
 #[derive(Default)]
@@ -42,6 +46,68 @@ impl AccountDataByCommitment {
                 .or(self.confirmed_account.clone()),
             Commitment::Confirmed => self.confirmed_account.clone(),
             Commitment::Finalized => self.finalized_account.clone(),
+        }
+    }
+
+    pub fn get_account_data_filtered(
+        &self,
+        commitment: Commitment,
+        mut filters: Vec<AccountFilterType>,
+    ) -> Option<AccountData> {
+        let account_data = match commitment {
+            Commitment::Processed => self
+                .processed_accounts
+                .last_key_value()
+                .map(|(_, v)| v)
+                .or(self.confirmed_account.as_ref()),
+            Commitment::Confirmed => self.confirmed_account.as_ref(),
+            Commitment::Finalized => self.finalized_account.as_ref(),
+        };
+
+        let Some(account_data) = account_data else {
+            return None;
+        };
+
+        let tmp_filters = filters.clone();
+        let size = tmp_filters.iter().enumerate().find(|x| match x.1 {
+            AccountFilterType::Datasize(_) => true,
+            AccountFilterType::Memcmp(_) => false,
+        });
+
+        // filter by size
+        match size {
+            Some((index, AccountFilterType::Datasize(size))) => {
+                if *size != account_data.account.data.len() as u64 {
+                    return None;
+                } else {
+                    filters.remove(index);
+                }
+            }
+            _ => {
+                return None;
+            }
+        }
+        // match other filters
+        if !filters.is_empty() {
+            let data = account_data.account.data.data();
+            if filters.iter().all(|x| x.allows(&data)) {
+                Some(AccountData {
+                    pubkey: account_data.pubkey,
+                    account: Arc::new(Account {
+                        lamports: account_data.account.lamports,
+                        data: account_data::Data::Uncompressed(data),
+                        owner: account_data.account.owner,
+                        executable: account_data.account.executable,
+                        rent_epoch: account_data.account.rent_epoch,
+                    }),
+                    updated_slot: account_data.updated_slot,
+                    write_version: account_data.write_version,
+                })
+            } else {
+                None
+            }
+        } else {
+            Some(account_data.clone())
         }
     }
 

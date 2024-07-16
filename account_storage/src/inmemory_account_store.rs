@@ -242,19 +242,34 @@ impl AccountStorageInterface for InmemoryAccountStore {
                 let mut return_vec = vec![];
                 let program_pubkeys = occ.get();
                 for program_account in program_pubkeys.iter() {
-                    let account_data = self.get_account(*program_account, commitment)?;
-                    if let Some(account_data) = account_data {
-                        // recheck program owner and filters
-                        if account_data.account.owner.eq(&program_pubkey) {
-                            match &account_filters {
-                                Some(filters) => {
-                                    let data = account_data.account.data.data();
-                                    if filters.iter().all(|filter| filter.allows(&data)) {
-                                        return_vec.push(account_data.clone());
+                    match &account_filters {
+                        Some(account_filters) => {
+                            match self.account_store.entry(*program_account) {
+                                dashmap::mapref::entry::Entry::Occupied(occ) => {
+                                    let account = occ.get().get_account_data_filtered(
+                                        commitment,
+                                        account_filters.clone(),
+                                    );
+                                    drop(occ);
+                                    if let Some(account_data) = account {
+                                        if account_data.account.lamports > 0
+                                            && account_data.account.owner == program_pubkey
+                                        {
+                                            return_vec.push(account_data);
+                                        }
                                     }
                                 }
-                                None => {
-                                    return_vec.push(account_data.clone());
+                                dashmap::mapref::entry::Entry::Vacant(_) => {
+                                    // do nothing
+                                }
+                            };
+                        }
+                        None => {
+                            let account_data = self.get_account(*program_account, commitment)?;
+                            if let Some(account_data) = account_data {
+                                // recheck owner
+                                if program_pubkey == account_data.account.owner {
+                                    return_vec.push(account_data);
                                 }
                             }
                         }
