@@ -422,10 +422,13 @@ mod tests {
     use std::{collections::HashSet, sync::Arc};
 
     use crate::inmemory_account_store::InmemoryAccountStore;
+    use base64::Engine;
     use itertools::Itertools;
     use lite_account_manager_common::{
         account_data::{Account, AccountData, CompressionMethod},
-        account_filter::{AccountFilter, AccountFilters},
+        account_filter::{
+            AccountFilter, AccountFilterType, AccountFilters, MemcmpFilter, MemcmpFilterData,
+        },
         account_filters_interface::AccountFiltersStoreInterface,
         account_store_interface::{AccountLoadingError, AccountStorageInterface},
         commitment::Commitment,
@@ -455,6 +458,29 @@ mod tests {
                 sol_account,
                 CompressionMethod::None,
             )),
+            updated_slot,
+            write_version: 0,
+        }
+    }
+
+    fn create_random_account_with_data(
+        rng: &mut ThreadRng,
+        updated_slot: Slot,
+        pubkey: Pubkey,
+        program: Pubkey,
+        data: Vec<u8>,
+        compression_mode: CompressionMethod,
+    ) -> AccountData {
+        let sol_account = SolanaAccount {
+            lamports: rng.gen(),
+            data,
+            owner: program,
+            executable: false,
+            rent_epoch: 0,
+        };
+        AccountData {
+            pubkey,
+            account: Arc::new(Account::from_solana_account(sol_account, compression_mode)),
             updated_slot,
             write_version: 0,
         }
@@ -849,6 +875,227 @@ mod tests {
 
         assert_eq!(p_3, Ok(vec![]));
         assert_eq!(p_4, Ok(vec![account_processed.clone()]));
+    }
+
+    #[test]
+    pub fn test_get_program_account_2() {
+        let prog_1 = Pubkey::new_unique();
+        let filter_store = new_filter_store(vec![AccountFilter {
+            program_id: Some(prog_1),
+            accounts: vec![],
+            filters: None,
+        }]);
+
+        let store = InmemoryAccountStore::new(filter_store);
+
+        let mut rng = rand::thread_rng();
+        let data_1 = (0..100).map(|_| rng.gen::<u8>()).collect_vec();
+        let data_2 = (0..200).map(|_| rng.gen::<u8>()).collect_vec();
+        let data_3 = (0..300).map(|_| rng.gen::<u8>()).collect_vec();
+        let data_4 = (0..400).map(|_| rng.gen::<u8>()).collect_vec();
+        let data_5 = (0..400).map(|_| rng.gen::<u8>()).collect_vec();
+
+        let pk1_1 = Pubkey::new_unique();
+        let pk1_2 = Pubkey::new_unique();
+        let pk2_1 = Pubkey::new_unique();
+        let pk2_2 = Pubkey::new_unique();
+        let pk3_1 = Pubkey::new_unique();
+        let pk3_2 = Pubkey::new_unique();
+        let pk4_1 = Pubkey::new_unique();
+        let pk4_2 = Pubkey::new_unique();
+        let pk5_1 = Pubkey::new_unique();
+
+        store.initilize_or_update_account(create_random_account_with_data(
+            &mut rng,
+            1,
+            pk1_1,
+            prog_1,
+            data_1.clone(),
+            CompressionMethod::Lz4(8),
+        ));
+        store.initilize_or_update_account(create_random_account_with_data(
+            &mut rng,
+            1,
+            pk1_2,
+            prog_1,
+            data_1.clone(),
+            CompressionMethod::None,
+        ));
+        store.initilize_or_update_account(create_random_account_with_data(
+            &mut rng,
+            1,
+            pk2_1,
+            prog_1,
+            data_2.clone(),
+            CompressionMethod::Lz4(3),
+        ));
+        store.initilize_or_update_account(create_random_account_with_data(
+            &mut rng,
+            1,
+            pk2_2,
+            prog_1,
+            data_2.clone(),
+            CompressionMethod::None,
+        ));
+        store.initilize_or_update_account(create_random_account_with_data(
+            &mut rng,
+            1,
+            pk3_1,
+            prog_1,
+            data_3.clone(),
+            CompressionMethod::Lz4(10),
+        ));
+        store.initilize_or_update_account(create_random_account_with_data(
+            &mut rng,
+            1,
+            pk3_2,
+            prog_1,
+            data_3.clone(),
+            CompressionMethod::Lz4(5),
+        ));
+        store.initilize_or_update_account(create_random_account_with_data(
+            &mut rng,
+            1,
+            pk4_1,
+            prog_1,
+            data_4.clone(),
+            CompressionMethod::Lz4(4),
+        ));
+        store.initilize_or_update_account(create_random_account_with_data(
+            &mut rng,
+            1,
+            pk4_2,
+            prog_1,
+            data_4.clone(),
+            CompressionMethod::Lz4(2),
+        ));
+        store.initilize_or_update_account(create_random_account_with_data(
+            &mut rng,
+            1,
+            pk5_1,
+            prog_1,
+            data_5.clone(),
+            CompressionMethod::Lz4(1),
+        ));
+
+        let gpa_1 = store
+            .get_program_accounts(prog_1, None, Commitment::Finalized)
+            .unwrap()
+            .iter()
+            .map(|x| x.pubkey)
+            .collect::<HashSet<Pubkey>>();
+        assert_eq!(
+            gpa_1,
+            vec![pk1_1, pk1_2, pk2_1, pk2_2, pk3_1, pk3_2, pk4_1, pk4_2, pk5_1]
+                .iter()
+                .cloned()
+                .collect::<HashSet<Pubkey>>()
+        );
+
+        let gpa_acc_1 = [pk1_1, pk1_2].iter().cloned().collect::<HashSet<Pubkey>>();
+        let gpa_2 = store
+            .get_program_accounts(
+                prog_1,
+                Some(vec![AccountFilterType::Datasize(100)]),
+                Commitment::Finalized,
+            )
+            .unwrap()
+            .iter()
+            .map(|x| x.pubkey)
+            .collect::<HashSet<Pubkey>>();
+        assert_eq!(gpa_2, gpa_acc_1);
+
+        let gpa_2 = store
+            .get_program_accounts(
+                prog_1,
+                Some(vec![AccountFilterType::Memcmp(MemcmpFilter {
+                    offset: 0,
+                    data: MemcmpFilterData::Bytes(data_1[0..30].to_vec()),
+                })]),
+                Commitment::Finalized,
+            )
+            .unwrap()
+            .iter()
+            .map(|x| x.pubkey)
+            .collect::<HashSet<Pubkey>>();
+        assert_eq!(gpa_2, gpa_acc_1);
+
+        let base64_str = base64::engine::general_purpose::STANDARD.encode(&data_1[10..30]);
+        let gpa_2 = store
+            .get_program_accounts(
+                prog_1,
+                Some(vec![AccountFilterType::Memcmp(MemcmpFilter {
+                    offset: 10,
+                    data: MemcmpFilterData::Base64(base64_str),
+                })]),
+                Commitment::Finalized,
+            )
+            .unwrap()
+            .iter()
+            .map(|x| x.pubkey)
+            .collect::<HashSet<Pubkey>>();
+        assert_eq!(gpa_2, gpa_acc_1);
+
+        let base64_str = bs58::encode(&data_1[20..60]).into_string();
+        let gpa_2 = store
+            .get_program_accounts(
+                prog_1,
+                Some(vec![AccountFilterType::Memcmp(MemcmpFilter {
+                    offset: 20,
+                    data: MemcmpFilterData::Base58(base64_str),
+                })]),
+                Commitment::Finalized,
+            )
+            .unwrap()
+            .iter()
+            .map(|x| x.pubkey)
+            .collect::<HashSet<Pubkey>>();
+        assert_eq!(gpa_2, gpa_acc_1);
+
+        let gpa_acc_3 = [pk3_1, pk3_2].iter().cloned().collect::<HashSet<Pubkey>>();
+        let gpa = store
+            .get_program_accounts(
+                prog_1,
+                Some(vec![AccountFilterType::Datasize(300)]),
+                Commitment::Finalized,
+            )
+            .unwrap()
+            .iter()
+            .map(|x| x.pubkey)
+            .collect::<HashSet<Pubkey>>();
+        assert_eq!(gpa, gpa_acc_3);
+
+        let base64_str = base64::engine::general_purpose::STANDARD.encode(&data_3[10..30]);
+        let gpa = store
+            .get_program_accounts(
+                prog_1,
+                Some(vec![AccountFilterType::Memcmp(MemcmpFilter {
+                    offset: 10,
+                    data: MemcmpFilterData::Base64(base64_str),
+                })]),
+                Commitment::Finalized,
+            )
+            .unwrap()
+            .iter()
+            .map(|x| x.pubkey)
+            .collect::<HashSet<Pubkey>>();
+        assert_eq!(gpa, gpa_acc_3);
+
+        let base64_str = bs58::encode(&data_3[20..60]).into_string();
+        let gpa = store
+            .get_program_accounts(
+                prog_1,
+                Some(vec![AccountFilterType::Memcmp(MemcmpFilter {
+                    offset: 20,
+                    data: MemcmpFilterData::Base58(base64_str),
+                })]),
+                Commitment::Finalized,
+            )
+            .unwrap()
+            .iter()
+            .map(|x| x.pubkey)
+            .collect::<HashSet<Pubkey>>();
+        assert_eq!(gpa, gpa_acc_3);
     }
 
     #[test]

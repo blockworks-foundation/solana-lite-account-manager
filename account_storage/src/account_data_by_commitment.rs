@@ -83,7 +83,10 @@ impl AccountDataByCommitment {
                     filters.remove(index);
                 }
             }
-            _ => {
+            None => {
+                // check other filters
+            }
+            Some(_) => {
                 return None;
             }
         }
