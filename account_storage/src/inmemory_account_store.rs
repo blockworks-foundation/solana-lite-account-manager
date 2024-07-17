@@ -241,7 +241,7 @@ impl AccountStorageInterface for InmemoryAccountStore {
             dashmap::mapref::entry::Entry::Occupied(occ) => {
                 let mut return_vec = vec![];
                 let program_pubkeys = occ.get();
-                for program_account in program_pubkeys.iter() {
+                for program_account in program_pubkeys {
                     match &account_filters {
                         Some(account_filters) => {
                             match self.account_store.entry(*program_account) {
