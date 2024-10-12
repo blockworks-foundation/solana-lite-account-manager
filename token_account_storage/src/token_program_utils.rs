@@ -94,7 +94,7 @@ pub fn get_token_program_account_type(
         match type_account {
             0 => {
                 //mint
-                let mint = spl_token_2022::state::Mint::unpack(&account_data.account.data.data())?;
+                let mint = spl_token_2022::state::Mint::unpack_unchecked(&account_data.account.data.data())?;
                 Ok(TokenProgramAccountType::Mint(MintAccount {
                     program: crate::account_types::Program::Token2022Program,
                     pubkey: account_data.pubkey,
@@ -109,7 +109,7 @@ pub fn get_token_program_account_type(
             }
             1 => {
                 let token_account =
-                    spl_token_2022::state::Account::unpack(&account_data.account.data.data())?;
+                    spl_token_2022::state::Account::unpack_unchecked(&account_data.account.data.data())?;
                 let mint_index = get_or_create_mint_index(
                     token_account.mint,
                     mint_index_by_pubkey,
@@ -144,7 +144,7 @@ pub fn get_token_program_account_type(
             }
             2 => {
                 let multi_sig =
-                    spl_token_2022::state::Multisig::unpack(&account_data.account.data.data())?;
+                    spl_token_2022::state::Multisig::unpack_unchecked(&account_data.account.data.data())?;
                 Ok(TokenProgramAccountType::MultiSig(
                     MultiSig {
                         program: crate::account_types::Program::Token2022Program,
@@ -168,7 +168,7 @@ pub fn get_token_program_account_type(
     } else if account_data.account.owner == spl_token::ID {
         if account_data.account.data.len() == 82 {
             // mint
-            let mint = spl_token::state::Mint::unpack(&account_data.account.data.data())?;
+            let mint = spl_token::state::Mint::unpack_unchecked(&account_data.account.data.data())?;
             Ok(TokenProgramAccountType::Mint(MintAccount {
                 program: crate::account_types::Program::TokenProgram,
                 pubkey: account_data.pubkey,
@@ -183,7 +183,7 @@ pub fn get_token_program_account_type(
         } else if account_data.account.data.len() == 165 {
             //token account
             let token_account =
-                spl_token::state::Account::unpack(&account_data.account.data.data())?;
+                spl_token::state::Account::unpack_unchecked(&account_data.account.data.data())?;
             let mint_index = get_or_create_mint_index(
                 token_account.mint,
                 mint_index_by_pubkey,
@@ -215,8 +215,7 @@ pub fn get_token_program_account_type(
             }))
         } else {
             // multisig
-            assert_eq!(account_data.account.data.len(), 355);
-            let multi_sig = spl_token::state::Multisig::unpack(&account_data.account.data.data())?;
+            let multi_sig = spl_token::state::Multisig::unpack_unchecked(&account_data.account.data.data())?;
             Ok(TokenProgramAccountType::MultiSig(
                 MultiSig {
                     program: crate::account_types::Program::TokenProgram,

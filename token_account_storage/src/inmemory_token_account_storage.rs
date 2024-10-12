@@ -24,7 +24,7 @@ lazy_static::lazy_static! {
        register_int_gauge!(opts!("lite_account_token_accounts_deleted_in_memory", "Account InMemory")).unwrap();
 }
 
-const PARTIAL_PUBKEY_SIZE: usize = 8;
+const PARTIAL_PUBKEY_SIZE: usize = 4;
 type InmemoryPubkey = PartialPubkey<PARTIAL_PUBKEY_SIZE>;
 
 #[derive(Default)]

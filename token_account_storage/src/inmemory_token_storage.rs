@@ -39,7 +39,7 @@ lazy_static::lazy_static! {
         register_int_gauge!(opts!("lite_accounts_token_mints_in_memory", "Slot of latest account update")).unwrap();
 }
 
-const PARTIAL_PUBKEY_SIZE: usize = 6;
+const PARTIAL_PUBKEY_SIZE: usize = 4;
 type InmemoryPubkey = PartialPubkey<PARTIAL_PUBKEY_SIZE>;
 #[derive(Clone)]
 struct ProcessedAccount {
@@ -602,7 +602,7 @@ impl AccountStorageInterface for TokenProgramAccountsStorage {
         ) {
             Ok(res) => res,
             Err(e) => {
-                log::error!("Token account was not able to identified {}", e);
+                log::error!("Token program account {} was not able to identified {}", account_data.pubkey.to_string(), e);
                 return;
             }
         };

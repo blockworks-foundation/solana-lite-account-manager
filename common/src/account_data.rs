@@ -24,6 +24,27 @@ pub enum Data {
 }
 
 impl Data {
+    pub fn new(data:&[u8], compression_method: CompressionMethod) -> Self {
+        match compression_method {
+            CompressionMethod::None => Data::Uncompressed(data.to_vec()),
+            CompressionMethod::Lz4(level) => {
+                let len = data.len();
+                let binary = lz4::block::compress(
+                    &data,
+                    Some(lz4::block::CompressionMode::FAST(level)),
+                    true,
+                )
+                .unwrap();
+                Data::Lz4 { binary, len }
+            }
+            CompressionMethod::Zstd(level) => {
+                let len = data.len();
+                let binary = zstd::bulk::compress(&data, level).unwrap();
+                Data::Zstd { binary, len }
+            }
+        }
+    }
+
     pub fn len(&self) -> usize {
         match self {
             Data::Uncompressed(d) => d.len(),
@@ -78,27 +99,9 @@ impl Account {
         account: SolanaAccount,
         compression_method: CompressionMethod,
     ) -> Self {
-        let data = match compression_method {
-            CompressionMethod::None => Data::Uncompressed(account.data),
-            CompressionMethod::Lz4(level) => {
-                let len = account.data.len();
-                let binary = lz4::block::compress(
-                    &account.data,
-                    Some(lz4::block::CompressionMode::FAST(level)),
-                    true,
-                )
-                .unwrap();
-                Data::Lz4 { binary, len }
-            }
-            CompressionMethod::Zstd(level) => {
-                let len = account.data.len();
-                let binary = zstd::bulk::compress(&account.data, level).unwrap();
-                Data::Zstd { binary, len }
-            }
-        };
         Self {
             lamports: account.lamports,
-            data,
+            data: Data::new(&account.data, compression_method),
             owner: account.owner,
             executable: account.executable,
             rent_epoch: account.rent_epoch,

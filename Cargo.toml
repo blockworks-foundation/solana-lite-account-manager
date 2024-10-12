@@ -6,6 +6,7 @@ members = [
     "accounts_on_demand",
     "common",
     "token_account_storage",
+    "simulate_from_snapshot"
 ]
 
 [workspace.package]
@@ -17,11 +18,15 @@ repository = "https://github.com/blockworks-foundation/solana-lite-account-manag
 license = "AGPL"
 
 [workspace.dependencies]
-solana-sdk = "~1.18.15"
-solana-rpc-client = "~1.18.15"
-solana-account-decoder = "~1.18.15"
-solana-client = "~1.18.15"
-solana-program = "~1.18.15"
+solana-sdk = "~1.18.23"
+solana-rpc-client = "~1.18.23"
+solana-account-decoder = "~1.18.23"
+solana-client = "~1.18.23"
+solana-program = "~1.18.23"
+solana-accounts-db = "~1.18.23"
+solana-frozen-abi-macro = "~1.18.23"
+solana-runtime = "1.18.23"
+solana-rpc-client-api = "~1.18.23"
 
 dashmap = "5.4.0"
 serde = { version = "1.0.160", features = ["derive"] }
