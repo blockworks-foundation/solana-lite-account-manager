@@ -53,7 +53,7 @@ impl AccountDataByCommitment {
     pub fn get_account_data_filtered(
         &self,
         commitment: Commitment,
-        mut filters: Vec<AccountFilterType>,
+        filters: &Vec<AccountFilterType>,
     ) -> Option<AccountData> {
         let account_data = match commitment {
             Commitment::Processed => self
@@ -69,28 +69,15 @@ impl AccountDataByCommitment {
             return None;
         };
 
-        let tmp_filters = filters.clone();
-        let size = tmp_filters.iter().enumerate().find(|x| match x.1 {
-            AccountFilterType::Datasize(_) => true,
-            AccountFilterType::Memcmp(_) => false,
-        });
-
-        // filter by size
-        match size {
-            Some((index, AccountFilterType::Datasize(size))) => {
-                if *size != account_data.account.data.len() as u64 {
+        // check size filter first before decompressing
+        for filter in filters {
+            if let AccountFilterType::Datasize(size) = filter {
+                if account_data.account.data.len() as u64 != *size {
                     return None;
-                } else {
-                    filters.remove(index);
                 }
             }
-            None => {
-                // check other filters
-            }
-            Some(_) => {
-                return None;
-            }
         }
+
         // match other filters
         if !filters.is_empty() {
             let data = account_data.account.data.data();

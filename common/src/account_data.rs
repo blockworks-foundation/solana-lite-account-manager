@@ -24,13 +24,13 @@ pub enum Data {
 }
 
 impl Data {
-    pub fn new(data:&[u8], compression_method: CompressionMethod) -> Self {
+    pub fn new(data: &[u8], compression_method: CompressionMethod) -> Self {
         match compression_method {
             CompressionMethod::None => Data::Uncompressed(data.to_vec()),
             CompressionMethod::Lz4(level) => {
                 let len = data.len();
                 let binary = lz4::block::compress(
-                    &data,
+                    data,
                     Some(lz4::block::CompressionMode::FAST(level)),
                     true,
                 )
@@ -39,7 +39,7 @@ impl Data {
             }
             CompressionMethod::Zstd(level) => {
                 let len = data.len();
-                let binary = zstd::bulk::compress(&data, level).unwrap();
+                let binary = zstd::bulk::compress(data, level).unwrap();
                 Data::Zstd { binary, len }
             }
         }

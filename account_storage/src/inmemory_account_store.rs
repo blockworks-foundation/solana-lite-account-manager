@@ -16,6 +16,7 @@ use lite_account_manager_common::{
 use prometheus::{opts, register_int_gauge, IntGauge};
 use solana_sdk::{pubkey::Pubkey, slot_history::Slot};
 use std::collections::BTreeMap;
+use std::sync::RwLock;
 
 lazy_static::lazy_static! {
     static ref ACCOUNT_STORED_IN_MEMORY: IntGauge =
@@ -36,7 +37,7 @@ struct SlotStatus {
 
 pub struct InmemoryAccountStore {
     account_store: Arc<DashMap<Pubkey, AccountDataByCommitment>>,
-    accounts_by_owner: Arc<DashMap<Pubkey, HashSet<Pubkey>>>,
+    accounts_by_owner: Arc<DashMap<Pubkey, Arc<RwLock<HashSet<Pubkey>>>>>,
     slots_status: Arc<Mutex<BTreeMap<Slot, SlotStatus>>>,
     filtered_accounts: Arc<dyn AccountFiltersStoreInterface>,
 }
@@ -54,12 +55,12 @@ impl InmemoryAccountStore {
     fn add_account_owner(&self, account: Pubkey, owner: Pubkey) {
         match self.accounts_by_owner.entry(owner) {
             dashmap::mapref::entry::Entry::Occupied(mut occ) => {
-                occ.get_mut().insert(account);
+                occ.get_mut().write().unwrap().insert(account);
             }
             dashmap::mapref::entry::Entry::Vacant(vc) => {
                 let mut set = HashSet::new();
                 set.insert(account);
-                vc.insert(set);
+                vc.insert(Arc::new(RwLock::new(set)));
             }
         }
     }
@@ -81,7 +82,10 @@ impl InmemoryAccountStore {
                     .entry(prev_account_data.account.owner)
                 {
                     dashmap::mapref::entry::Entry::Occupied(mut occ) => {
-                        occ.get_mut().remove(&prev_account_data.pubkey);
+                        occ.get_mut()
+                            .write()
+                            .unwrap()
+                            .remove(&prev_account_data.pubkey);
                     }
                     dashmap::mapref::entry::Entry::Vacant(_) => {
                         // do nothing
@@ -237,48 +241,48 @@ impl AccountStorageInterface for InmemoryAccountStore {
         }) {
             return Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters);
         }
-        match self.accounts_by_owner.entry(program_pubkey) {
-            dashmap::mapref::entry::Entry::Occupied(occ) => {
-                let mut return_vec = vec![];
-                let program_pubkeys = occ.get();
-                for program_account in program_pubkeys {
-                    match &account_filters {
-                        Some(account_filters) => {
-                            match self.account_store.entry(*program_account) {
-                                dashmap::mapref::entry::Entry::Occupied(occ) => {
-                                    let account = occ.get().get_account_data_filtered(
-                                        commitment,
-                                        account_filters.clone(),
-                                    );
-                                    drop(occ);
-                                    if let Some(account_data) = account {
-                                        if account_data.account.lamports > 0
-                                            && account_data.account.owner == program_pubkey
-                                        {
-                                            return_vec.push(account_data);
-                                        }
-                                    }
-                                }
-                                dashmap::mapref::entry::Entry::Vacant(_) => {
-                                    // do nothing
-                                }
-                            };
-                        }
-                        None => {
-                            let account_data = self.get_account(*program_account, commitment)?;
-                            if let Some(account_data) = account_data {
-                                // recheck owner
-                                if program_pubkey == account_data.account.owner {
+        let lk = match self.accounts_by_owner.entry(program_pubkey) {
+            dashmap::mapref::entry::Entry::Occupied(occ) => occ.get().clone(),
+            dashmap::mapref::entry::Entry::Vacant(_) => {
+                return Ok(vec![]);
+            }
+        };
+
+        let mut return_vec = vec![];
+        for program_account in lk.read().unwrap().iter() {
+            match &account_filters {
+                Some(account_filters) => {
+                    match self.account_store.entry(*program_account) {
+                        dashmap::mapref::entry::Entry::Occupied(occ) => {
+                            let account = occ
+                                .get()
+                                .get_account_data_filtered(commitment, account_filters);
+                            drop(occ);
+                            if let Some(account_data) = account {
+                                if account_data.account.lamports > 0
+                                    && account_data.account.owner == program_pubkey
+                                {
                                     return_vec.push(account_data);
                                 }
                             }
                         }
+                        dashmap::mapref::entry::Entry::Vacant(_) => {
+                            // do nothing
+                        }
+                    };
+                }
+                None => {
+                    let account_data = self.get_account(*program_account, commitment)?;
+                    if let Some(account_data) = account_data {
+                        // recheck owner
+                        if program_pubkey == account_data.account.owner {
+                            return_vec.push(account_data);
+                        }
                     }
                 }
-                Ok(return_vec)
             }
-            dashmap::mapref::entry::Entry::Vacant(_) => Ok(vec![]),
         }
+        Ok(return_vec)
     }
 
     fn process_slot_data(&self, slot_info: SlotInfo, commitment: Commitment) -> Vec<AccountData> {

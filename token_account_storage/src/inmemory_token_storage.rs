@@ -602,7 +602,11 @@ impl AccountStorageInterface for TokenProgramAccountsStorage {
         ) {
             Ok(res) => res,
             Err(e) => {
-                log::error!("Token program account {} was not able to identified {}", account_data.pubkey.to_string(), e);
+                log::error!(
+                    "Token program account {} was not able to identified {}",
+                    account_data.pubkey.to_string(),
+                    e
+                );
                 return;
             }
         };
@@ -624,7 +628,7 @@ impl AccountStorageInterface for TokenProgramAccountsStorage {
                         commitment,
                         self.confirmed_slot.load(Ordering::Relaxed),
                     )
-                    .get(0)
+                    .first()
                     .unwrap()
                 {
                     Some((processed_account, slot)) => Ok(token_program_account_to_solana_account(
