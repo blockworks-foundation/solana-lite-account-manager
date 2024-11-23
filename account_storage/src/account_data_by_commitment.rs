@@ -266,4 +266,10 @@ impl AccountDataByCommitment {
             None
         }
     }
+
+    pub fn delete(&mut self) {
+        self.processed_accounts.clear();
+        self.confirmed_account = None;
+        self.finalized_account = None;
+    }
 }
