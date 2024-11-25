@@ -1,6 +1,6 @@
 use std::{
-    collections::{HashMap, HashSet},
-    sync::{Arc, Mutex},
+    collections::{BTreeSet, HashMap},
+    sync::{Arc, Mutex, RwLockReadGuard},
 };
 
 use crate::account_data_by_commitment::AccountDataByCommitment;
@@ -31,14 +31,14 @@ lazy_static::lazy_static! {
 
 struct SlotStatus {
     pub commitment: Commitment,
-    pub accounts_updated: HashSet<AccountIndex>,
+    pub accounts_updated: BTreeSet<AccountIndex>,
     pub parent: Option<Slot>,
 }
 
 type AccountIndex = usize;
 pub struct InmemoryAccountStore {
     pubkey_to_account_index: Arc<DashMap<Pubkey, AccountIndex>>,
-    accounts_by_owner: Arc<DashMap<Pubkey, Arc<RwLock<HashSet<AccountIndex>>>>>,
+    accounts_by_owner: Arc<DashMap<Pubkey, Arc<RwLock<BTreeSet<AccountIndex>>>>>,
     slots_status: Arc<Mutex<BTreeMap<Slot, SlotStatus>>>,
     filtered_accounts: Arc<dyn AccountFiltersStoreInterface>,
     accounts_store: RwLock<Vec<RwLock<AccountDataByCommitment>>>,
@@ -61,7 +61,7 @@ impl InmemoryAccountStore {
                 occ.get_mut().write().unwrap().insert(account_index);
             }
             dashmap::mapref::entry::Entry::Vacant(vc) => {
-                let mut set = HashSet::new();
+                let mut set = BTreeSet::new();
                 set.insert(account_index);
                 vc.insert(Arc::new(RwLock::new(set)));
             }
@@ -121,7 +121,7 @@ impl InmemoryAccountStore {
                     slot,
                     SlotStatus {
                         commitment,
-                        accounts_updated: HashSet::new(),
+                        accounts_updated: BTreeSet::new(),
                         parent: None,
                     },
                 );
@@ -167,6 +167,37 @@ impl InmemoryAccountStore {
 
     pub fn account_store_contains_key(&self, pubkey: &Pubkey) -> bool {
         self.pubkey_to_account_index.contains_key(pubkey)
+    }
+
+    fn get_account_with_filtering_from_lock(
+        lk_on_account: RwLockReadGuard<'_, AccountDataByCommitment>,
+        return_vec: &mut Vec<AccountData>,
+        commitment: Commitment,
+        program_pubkey: Pubkey,
+        account_filters: &Option<Vec<AccountFilterType>>,
+    ) {
+        match &account_filters {
+            Some(account_filters) => {
+                if let Some(account_data) =
+                    lk_on_account.get_account_data_filtered(commitment, account_filters)
+                {
+                    if account_data.account.lamports > 0
+                        && account_data.account.owner == program_pubkey
+                    {
+                        return_vec.push(account_data);
+                    }
+                };
+            }
+            None => {
+                let account_data = lk_on_account.get_account_data(commitment);
+                if let Some(account_data) = account_data {
+                    // recheck owner
+                    if program_pubkey == account_data.account.owner {
+                        return_vec.push(account_data);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -281,35 +312,38 @@ impl AccountStorageInterface for InmemoryAccountStore {
         };
 
         let mut return_vec = vec![];
+        let store_read_lk = self.accounts_store.read().unwrap();
+        let mut retry_list = BTreeSet::new();
+        // optimization to avoid locking for each account
         for program_account_index in lk.read().unwrap().iter() {
-            match &account_filters {
-                Some(account_filters) => {
-                    let read_lk = self.accounts_store.read().unwrap();
-                    let lk = read_lk[*program_account_index].read().unwrap();
-                    if let Some(account_data) =
-                        lk.get_account_data_filtered(commitment, account_filters)
-                    {
-                        if account_data.account.lamports > 0
-                            && account_data.account.owner == program_pubkey
-                        {
-                            return_vec.push(account_data);
-                        }
-                    };
+            let lk_on_account = match store_read_lk[*program_account_index].try_read() {
+                Ok(lk) => lk,
+                Err(_) => {
+                    retry_list.insert(*program_account_index);
+                    continue;
                 }
-                None => {
-                    let account_data = self.accounts_store.read().unwrap()[*program_account_index]
-                        .read()
-                        .unwrap()
-                        .get_account_data(commitment);
-                    if let Some(account_data) = account_data {
-                        // recheck owner
-                        if program_pubkey == account_data.account.owner {
-                            return_vec.push(account_data);
-                        }
-                    }
-                }
-            }
+            };
+            Self::get_account_with_filtering_from_lock(
+                lk_on_account,
+                &mut return_vec,
+                commitment,
+                program_pubkey,
+                &account_filters,
+            );
         }
+
+        // retry for the accounts which were locked
+        for retry_account_index in retry_list {
+            let lk_on_account = store_read_lk[retry_account_index].read().unwrap();
+            Self::get_account_with_filtering_from_lock(
+                lk_on_account,
+                &mut return_vec,
+                commitment,
+                program_pubkey,
+                &account_filters,
+            );
+        }
+
         Ok(return_vec)
     }
 
@@ -366,7 +400,7 @@ impl AccountStorageInterface for InmemoryAccountStore {
                             // add status for processed slot
                             let status = SlotStatus {
                                 commitment,
-                                accounts_updated: HashSet::new(),
+                                accounts_updated: BTreeSet::new(),
                                 parent: Some(slot_info.parent),
                             };
                             lk.insert(slot, status);

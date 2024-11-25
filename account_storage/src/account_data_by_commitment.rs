@@ -80,22 +80,32 @@ impl AccountDataByCommitment {
 
         // match other filters
         if !filters.is_empty() {
-            let data = account_data.account.data.data();
-            if filters.iter().all(|x| x.allows(&data)) {
-                Some(AccountData {
-                    pubkey: account_data.pubkey,
-                    account: Arc::new(Account {
-                        lamports: account_data.account.lamports,
-                        data: account_data::Data::Uncompressed(data),
-                        owner: account_data.account.owner,
-                        executable: account_data.account.executable,
-                        rent_epoch: account_data.account.rent_epoch,
-                    }),
-                    updated_slot: account_data.updated_slot,
-                    write_version: account_data.write_version,
-                })
+            if let account_data::Data::Uncompressed(data) = &account_data.account.data {
+                // optimized for uncompressed data
+                if filters.iter().all(|x| x.allows(data)) {
+                    Some(account_data.clone())
+                } else {
+                    None
+                }
             } else {
-                None
+                // decompress data due to lz4/zstd compression
+                let data = account_data.account.data.data();
+                if filters.iter().all(|x| x.allows(&data)) {
+                    Some(AccountData {
+                        pubkey: account_data.pubkey,
+                        account: Arc::new(Account {
+                            lamports: account_data.account.lamports,
+                            data: account_data::Data::Uncompressed(data),
+                            owner: account_data.account.owner,
+                            executable: account_data.account.executable,
+                            rent_epoch: account_data.account.rent_epoch,
+                        }),
+                        updated_slot: account_data.updated_slot,
+                        write_version: account_data.write_version,
+                    })
+                } else {
+                    None
+                }
             }
         } else {
             Some(account_data.clone())
