@@ -65,9 +65,7 @@ impl AccountDataByCommitment {
             Commitment::Finalized => self.finalized_account.as_ref(),
         };
 
-        let Some(account_data) = account_data else {
-            return None;
-        };
+        let account_data = account_data?;
 
         // check size filter first before decompressing
         for filter in filters {

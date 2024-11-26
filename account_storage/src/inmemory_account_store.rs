@@ -313,13 +313,13 @@ impl AccountStorageInterface for InmemoryAccountStore {
 
         let mut return_vec = vec![];
         let store_read_lk = self.accounts_store.read().unwrap();
-        let mut retry_list = BTreeSet::new();
+        let mut retry_list = Vec::with_capacity(128);
         // optimization to avoid locking for each account
         for program_account_index in lk.read().unwrap().iter() {
             let lk_on_account = match store_read_lk[*program_account_index].try_read() {
                 Ok(lk) => lk,
                 Err(_) => {
-                    retry_list.insert(*program_account_index);
+                    retry_list.push(*program_account_index);
                     continue;
                 }
             };
@@ -331,7 +331,6 @@ impl AccountStorageInterface for InmemoryAccountStore {
                 &account_filters,
             );
         }
-
         // retry for the accounts which were locked
         for retry_account_index in retry_list {
             let lk_on_account = store_read_lk[retry_account_index].read().unwrap();

@@ -34,15 +34,27 @@ impl MemcmpFilter {
     }
 
     pub fn bytes_match(&self, data: &[u8]) -> bool {
-        let bytes = self.bytes();
-        let offset = self.offset as usize;
-        if offset > data.len() {
-            return false;
+        // optimize for bytes / avoid copying
+        if let MemcmpFilterData::Bytes(bytes) = &self.data {
+            let offset = self.offset as usize;
+            if offset > data.len() {
+                return false;
+            }
+            if data[offset..].len() < bytes.len() {
+                return false;
+            }
+            data[offset..offset + bytes.len()] == bytes[..]
+        } else {
+            let bytes = self.bytes();
+            let offset = self.offset as usize;
+            if offset > data.len() {
+                return false;
+            }
+            if data[offset..].len() < bytes.len() {
+                return false;
+            }
+            data[offset..offset + bytes.len()] == bytes[..]
         }
-        if data[offset..].len() < bytes.len() {
-            return false;
-        }
-        data[offset..offset + bytes.len()] == bytes[..]
     }
 }
 
