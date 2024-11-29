@@ -42,3 +42,6 @@ tower-http = { version = "0.4.0", features = ["full"] }
 
 quic-geyser-client = { git = "https://github.com/blockworks-foundation/quic_geyser_plugin.git", branch = "main" }
 quic-geyser-common = { git = "https://github.com/blockworks-foundation/quic_geyser_plugin.git", branch = "main" }
+
+# compare
+mango-feeds-connector = { git = "https://github.com/blockworks-foundation/mango-feeds.git", tag = "connector-v0.4.8-solana-v1.18.15" }
