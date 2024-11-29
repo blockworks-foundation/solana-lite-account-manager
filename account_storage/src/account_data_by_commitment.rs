@@ -281,3 +281,387 @@ impl AccountDataByCommitment {
         self.finalized_account = None;
     }
 }
+
+// this method will promote processed account to confirmed account to finalized account
+// returns promoted account
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lite_account_manager_common::{
+        account_data::{Account, AccountData},
+        commitment::Commitment,
+    };
+    use solana_sdk::pubkey::Pubkey;
+
+    fn create_account_data(slot: Slot, write_version: u64) -> AccountData {
+        AccountData {
+            pubkey: Pubkey::new_unique(),
+            account: Arc::new(Account {
+                lamports: 100,
+                data: account_data::Data::Uncompressed(vec![0; 32]),
+                owner: Pubkey::new_unique(),
+                executable: false,
+                rent_epoch: 0,
+            }),
+            updated_slot: slot,
+            write_version,
+        }
+    }
+
+    #[test]
+    fn test_promote_slot_commitment() {
+        // normal promotion
+        let mut account_data_by_commitment = AccountDataByCommitment::default();
+        let slot = 1;
+        let data = create_account_data(slot, 1);
+
+        account_data_by_commitment.update(data.clone(), Commitment::Processed);
+        assert_eq!(
+            account_data_by_commitment.promote_slot_commitment(slot, Commitment::Confirmed),
+            Some((data.clone(), None))
+        );
+        assert_eq!(
+            account_data_by_commitment.confirmed_account,
+            Some(data.clone())
+        );
+        assert_eq!(
+            account_data_by_commitment.promote_slot_commitment(slot, Commitment::Finalized),
+            Some((data.clone(), None))
+        );
+        assert_eq!(
+            account_data_by_commitment.confirmed_account,
+            Some(data.clone())
+        );
+        assert_eq!(
+            account_data_by_commitment.finalized_account,
+            Some(data.clone())
+        );
+
+        let slot = 2;
+        let data2 = create_account_data(slot, 2);
+        account_data_by_commitment.update(data2.clone(), Commitment::Processed);
+        assert_eq!(
+            account_data_by_commitment.promote_slot_commitment(slot, Commitment::Finalized),
+            Some((data2.clone(), Some(data.clone())))
+        );
+        assert_eq!(
+            account_data_by_commitment.confirmed_account,
+            Some(data2.clone())
+        );
+        assert_eq!(
+            account_data_by_commitment.finalized_account,
+            Some(data2.clone())
+        );
+    }
+
+    #[test]
+    fn test_update_and_get_account_data() {
+        let mut account_data_by_commitment = AccountDataByCommitment::default();
+        let slot = 1;
+        let data = create_account_data(slot, 1);
+
+        account_data_by_commitment.update(data.clone(), Commitment::Processed);
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Processed),
+            Some(data.clone())
+        );
+
+        account_data_by_commitment.update(data.clone(), Commitment::Confirmed);
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Confirmed),
+            Some(data.clone())
+        );
+
+        account_data_by_commitment.update(data.clone(), Commitment::Finalized);
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Finalized),
+            Some(data.clone())
+        );
+    }
+
+    #[test]
+    fn test_update_finalized_account() {
+        let mut account_data_by_commitment = AccountDataByCommitment::default();
+        let slot = 1;
+        let data = create_account_data(slot, 10);
+
+        account_data_by_commitment.update(data.clone(), Commitment::Finalized);
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Processed),
+            Some(data.clone())
+        );
+
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Confirmed),
+            Some(data.clone())
+        );
+
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Finalized),
+            Some(data.clone())
+        );
+    }
+
+    #[test]
+    fn test_update_confirmed_account() {
+        let mut account_data_by_commitment = AccountDataByCommitment::default();
+        let slot = 1;
+        let data = create_account_data(slot, 10);
+
+        account_data_by_commitment.update(data.clone(), Commitment::Confirmed);
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Processed),
+            Some(data.clone())
+        );
+
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Confirmed),
+            Some(data.clone())
+        );
+
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Finalized),
+            None
+        );
+    }
+
+    #[test]
+    fn test_update_processed_account() {
+        let mut account_data_by_commitment = AccountDataByCommitment::default();
+        let slot = 5;
+        let data = create_account_data(slot, 10);
+
+        account_data_by_commitment.update(data.clone(), Commitment::Processed);
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Processed),
+            Some(data.clone())
+        );
+
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Confirmed),
+            None
+        );
+
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Finalized),
+            None
+        );
+
+        let data_2 = create_account_data(slot, 9);
+
+        account_data_by_commitment.update(data_2.clone(), Commitment::Processed);
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Processed),
+            Some(data.clone())
+        );
+
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Confirmed),
+            None
+        );
+
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Finalized),
+            None
+        );
+
+        let data_3 = create_account_data(slot, 11);
+
+        account_data_by_commitment.update(data_3.clone(), Commitment::Processed);
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Processed),
+            Some(data_3.clone())
+        );
+
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Confirmed),
+            None
+        );
+
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Finalized),
+            None
+        );
+
+        let data_4 = create_account_data(4, 8);
+        account_data_by_commitment.update(data_4.clone(), Commitment::Processed);
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Processed),
+            Some(data_3.clone())
+        );
+
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Confirmed),
+            None
+        );
+
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Finalized),
+            None
+        );
+
+        assert_eq!(
+            account_data_by_commitment.promote_slot_commitment(3, Commitment::Confirmed),
+            None
+        );
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Processed),
+            Some(data_3.clone())
+        );
+
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Confirmed),
+            None
+        );
+
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Finalized),
+            None
+        );
+
+        assert_eq!(
+            account_data_by_commitment.promote_slot_commitment(4, Commitment::Confirmed),
+            Some((data_4.clone(), None))
+        );
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Processed),
+            Some(data_3.clone())
+        );
+
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Confirmed),
+            Some(data_4.clone())
+        );
+
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Finalized),
+            None
+        );
+
+        assert_eq!(
+            account_data_by_commitment.promote_slot_commitment(5, Commitment::Confirmed),
+            Some((data_3.clone(), Some(data_4.clone())))
+        );
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Processed),
+            Some(data_3.clone())
+        );
+
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Confirmed),
+            Some(data_3.clone())
+        );
+
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Finalized),
+            None
+        );
+
+        assert_eq!(
+            account_data_by_commitment.promote_slot_commitment(5, Commitment::Finalized),
+            Some((data_3.clone(), None))
+        );
+
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Processed),
+            Some(data_3.clone())
+        );
+
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Confirmed),
+            Some(data_3.clone())
+        );
+
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Finalized),
+            Some(data_3.clone())
+        );
+    }
+
+    #[test]
+    fn test_update_and_get_account_data_old_slot_and_write_version() {
+        let mut account_data_by_commitment = AccountDataByCommitment::default();
+        let slot = 1;
+        let data = create_account_data(slot, 10);
+
+        account_data_by_commitment.update(data.clone(), Commitment::Processed);
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Processed),
+            Some(data.clone())
+        );
+
+        account_data_by_commitment.update(data.clone(), Commitment::Confirmed);
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Confirmed),
+            Some(data.clone())
+        );
+
+        account_data_by_commitment.update(data.clone(), Commitment::Finalized);
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Finalized),
+            Some(data.clone())
+        );
+    }
+
+    #[test]
+    fn test_get_account_data_filtered() {
+        let mut account_data_by_commitment = AccountDataByCommitment::default();
+        let slot = 1;
+        let data = create_account_data(slot, 1);
+
+        account_data_by_commitment.update(data.clone(), Commitment::Processed);
+        let filters = vec![AccountFilterType::Datasize(32)];
+        assert_eq!(
+            account_data_by_commitment.get_account_data_filtered(Commitment::Processed, &filters),
+            Some(data.clone())
+        );
+
+        let filters = vec![AccountFilterType::Datasize(64)];
+        assert_eq!(
+            account_data_by_commitment.get_account_data_filtered(Commitment::Processed, &filters),
+            None
+        );
+    }
+
+    #[test]
+    fn test_initialize() {
+        let data = create_account_data(1, 1);
+        let account_data_by_commitment = AccountDataByCommitment::initialize(data.clone());
+
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Processed),
+            Some(data.clone())
+        );
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Confirmed),
+            Some(data.clone())
+        );
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Finalized),
+            Some(data)
+        );
+    }
+
+    #[test]
+    fn test_delete() {
+        let mut account_data_by_commitment = AccountDataByCommitment::default();
+        let slot = 1;
+        let data = create_account_data(slot, 1);
+
+        account_data_by_commitment.update(data.clone(), Commitment::Processed);
+        account_data_by_commitment.delete();
+
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Processed),
+            None
+        );
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Confirmed),
+            None
+        );
+        assert_eq!(
+            account_data_by_commitment.get_account_data(Commitment::Finalized),
+            None
+        );
+    }
+}

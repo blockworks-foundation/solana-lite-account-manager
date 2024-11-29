@@ -58,6 +58,7 @@ impl TokenAccountStorageInterface for InmemoryTokenAccountStorage {
     }
 
     fn save_or_update(&self, token_account: TokenAccount) -> (TokenAccountIndex, bool) {
+        println!("Saving or updating token account: {:?}", token_account);
         match self.pubkey_to_index.entry(token_account.pubkey.into()) {
             dashmap::mapref::entry::Entry::Occupied(mut occ) => {
                 // already present
@@ -79,7 +80,7 @@ impl TokenAccountStorageInterface for InmemoryTokenAccountStorage {
                 write_lk.push_back(token_account.to_bytes());
                 token_indexes.push(token_index);
                 TOKEN_ACCOUNT_STORED_IN_MEMORY.inc();
-                (token_index as TokenAccountIndex, false)
+                (token_index as TokenAccountIndex, true)
             }
             dashmap::mapref::entry::Entry::Vacant(v) => {
                 // add new token account
