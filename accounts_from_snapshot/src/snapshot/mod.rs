@@ -1,7 +1,6 @@
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::str::FromStr;
-use itertools::Itertools;
 
 use solana_runtime::snapshot_package::SnapshotKind;
 use solana_sdk::slot_history::Slot;
@@ -64,25 +63,37 @@ impl Loader {
             self.cfg.maximum_full_snapshot_archives_to_retain,
             self.cfg.maximum_incremental_snapshot_archives_to_retain,
             true,
-        ).await.await??;
+        )
+        .await
+        .await??;
 
-        Ok(FullSnapshot { path, slot: snapshot.slot })
+        Ok(FullSnapshot {
+            path,
+            slot: snapshot.slot,
+        })
     }
 
     pub async fn load_latest_incremental_snapshot(&self) -> anyhow::Result<IncrementalSnapshot> {
-        let snapshot = latest_incremental_snapshot(self.cfg.hosts.to_vec()).await.unwrap();
+        let snapshot = latest_incremental_snapshot(self.cfg.hosts.to_vec())
+            .await
+            .unwrap();
         let path = download_snapshot(
             snapshot.host,
             self.cfg.full_snapshot_path.clone(),
             self.cfg.incremental_snapshot_path.clone(),
-            (snapshot.full_slot, snapshot.hash, ),
+            (snapshot.full_slot, snapshot.hash),
             SnapshotKind::IncrementalSnapshot(snapshot.incremental_slot),
             self.cfg.maximum_full_snapshot_archives_to_retain,
             self.cfg.maximum_incremental_snapshot_archives_to_retain,
             true,
-        ).await.await??;
+        )
+        .await
+        .await??;
 
-        Ok(IncrementalSnapshot { path, full_slot: snapshot.full_slot, incremental_slot: snapshot.incremental_slot })
+        Ok(IncrementalSnapshot {
+            path,
+            full_slot: snapshot.full_slot,
+            incremental_slot: snapshot.incremental_slot,
+        })
     }
 }
-

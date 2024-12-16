@@ -11,9 +11,7 @@ pub struct TestConsumer {}
 #[tokio::main]
 async fn main() {
     let loader = Loader::new(Config {
-        hosts: Box::new([
-            HostUrl::from_str("https://api.testnet.solana.com").unwrap()
-        ]),
+        hosts: Box::new([HostUrl::from_str("https://api.testnet.solana.com").unwrap()]),
         full_snapshot_path: PathBuf::from_str("/tmp/lite-full").unwrap(),
         incremental_snapshot_path: PathBuf::from_str("/tmp/lite-incr").unwrap(),
         maximum_full_snapshot_archives_to_retain: NonZeroUsize::new(100).unwrap(),

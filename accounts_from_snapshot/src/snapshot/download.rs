@@ -14,10 +14,9 @@
 
 // This file contains code vendored from https://github.com/solana-labs/solana
 
-
 use std::fs;
 use std::num::NonZeroUsize;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::bail;
 use log::info;
@@ -60,9 +59,7 @@ pub(crate) async fn download_snapshot(
             });
         fs::create_dir_all(&snapshot_archives_remote_dir).unwrap();
 
-        for archive_format in [
-            ArchiveFormat::TarZstd,
-        ] {
+        for archive_format in [ArchiveFormat::TarZstd] {
             let destination_path = match snapshot_kind {
                 SnapshotKind::FullSnapshot => snapshot_utils::build_full_snapshot_archive_path(
                     &snapshot_archives_remote_dir,
@@ -85,7 +82,11 @@ pub(crate) async fn download_snapshot(
                 return Ok(destination_path);
             }
 
-            let url = format!("{}/{}", host.0, destination_path.file_name().unwrap().to_str().unwrap());
+            let url = format!(
+                "{}/{}",
+                host.0,
+                destination_path.file_name().unwrap().to_str().unwrap()
+            );
             info!("Attempt to download: {}", &url);
 
             match download_file(
@@ -105,7 +106,8 @@ pub(crate) async fn download_snapshot(
 
         bail!(
             "Failed to download a snapshot archive for slot {} from {}",
-            desired_snapshot_hash.0, host.0
+            desired_snapshot_hash.0,
+            host.0
         )
     })
 }

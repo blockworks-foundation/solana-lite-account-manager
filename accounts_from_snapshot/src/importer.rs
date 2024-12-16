@@ -9,8 +9,8 @@ use tokio::task::JoinHandle;
 
 use lite_account_manager_common::account_data::{Account, AccountData, Data};
 
-use crate::{append_vec_iter, SnapshotExtractor};
 use crate::archived::ArchiveSnapshotExtractor;
+use crate::{append_vec_iter, SnapshotExtractor};
 
 pub async fn import(archive_path: PathBuf) -> (Receiver<AccountData>, JoinHandle<()>) {
     let (tx, rx) = mpsc::channel::<AccountData>(10_000);
@@ -22,7 +22,7 @@ pub async fn import(archive_path: PathBuf) -> (Receiver<AccountData>, JoinHandle
                     "Unable to load archive file: {}",
                     archive_path.to_str().unwrap()
                 )
-                    .as_str(),
+                .as_str(),
             );
 
         for append_vec in extractor.iter() {
@@ -47,8 +47,8 @@ pub async fn import(archive_path: PathBuf) -> (Receiver<AccountData>, JoinHandle
                             updated_slot: append_vec.slot(),
                             write_version: 0,
                         })
-                            .await
-                            .expect("Failed to send account data");
+                        .await
+                        .expect("Failed to send account data");
                     }
                 }
             });

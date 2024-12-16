@@ -1,21 +1,19 @@
+pub use importer::import;
 use thiserror::Error;
 use {
-    append_vec::{AppendVec, StoredAccountMeta},
     crate::solana::{
-        AccountsDbFields, DeserializableVersionedBank, deserialize_from,
+        deserialize_from, AccountsDbFields, DeserializableVersionedBank,
         SerializableAccountStorageEntry,
     },
+    append_vec::{AppendVec, StoredAccountMeta},
     std::{ffi::OsStr, str::FromStr},
 };
-pub use importer::import;
 
 pub(crate) mod append_vec;
 pub(crate) mod archived;
 mod importer;
-pub(crate) mod solana;
-pub mod snapshot; // FIXME pub(crate)
-
-const SNAPSHOTS_DIR: &str = "snapshots";
+pub mod snapshot;
+pub(crate) mod solana; // FIXME pub(crate)
 
 #[derive(Error, Debug)]
 pub enum SnapshotError {
@@ -35,7 +33,7 @@ pub enum SnapshotError {
 
 pub type SnapshotResult<T> = Result<T, SnapshotError>;
 
-pub type AppendVecIterator<'a> = Box<dyn Iterator<Item=SnapshotResult<AppendVec>> + 'a>;
+pub type AppendVecIterator<'a> = Box<dyn Iterator<Item = SnapshotResult<AppendVec>> + 'a>;
 
 pub trait SnapshotExtractor: Sized {
     fn iter(&mut self) -> AppendVecIterator<'_>;
@@ -52,7 +50,7 @@ fn parse_append_vec_name(name: &OsStr) -> Option<(u64, u64)> {
     }
 }
 
-pub fn append_vec_iter(append_vec: &AppendVec) -> impl Iterator<Item=StoredAccountMetaHandle> {
+pub fn append_vec_iter(append_vec: &AppendVec) -> impl Iterator<Item = StoredAccountMetaHandle> {
     let mut offset = 0usize;
     std::iter::repeat_with(move || {
         append_vec.get_account(offset).map(|(_, next_offset)| {
@@ -61,8 +59,8 @@ pub fn append_vec_iter(append_vec: &AppendVec) -> impl Iterator<Item=StoredAccou
             account
         })
     })
-        .take_while(|account| account.is_some())
-        .filter_map(|account| account)
+    .take_while(|account| account.is_some())
+    .filter_map(|account| account)
 }
 
 pub struct StoredAccountMetaHandle<'a> {
