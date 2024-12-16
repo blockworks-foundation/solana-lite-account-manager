@@ -10,10 +10,13 @@ on:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
     steps:
+    - name: Install Linux Packages
+      run: |
+        sudo apt-get update -y
+        sudo apt-get install libssl-dev openssl protobuf-compiler -y
+
     - name: Checkout code
       uses: actions/checkout@v2
 
