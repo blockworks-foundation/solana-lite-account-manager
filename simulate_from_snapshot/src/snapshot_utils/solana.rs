@@ -14,6 +14,9 @@
 
 // This file contains code vendored from https://github.com/solana-labs/solana
 
+use std::collections::{HashMap, HashSet};
+use std::io::Read;
+
 use bincode::Options;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -21,7 +24,6 @@ use solana_accounts_db::account_storage::meta::StoredMetaWriteVersion;
 use solana_accounts_db::accounts_db::BankHashStats;
 use solana_accounts_db::ancestors::AncestorsForSerialization;
 use solana_accounts_db::blockhash_queue::BlockhashQueue;
-use solana_accounts_db::rent_collector::RentCollector;
 use solana_frozen_abi_macro::AbiExample;
 use solana_runtime::epoch_stakes::EpochStakes;
 use solana_runtime::stakes::Stakes;
@@ -33,10 +35,9 @@ use solana_sdk::hard_forks::HardForks;
 use solana_sdk::hash::Hash;
 use solana_sdk::inflation::Inflation;
 use solana_sdk::pubkey::Pubkey;
+use solana_sdk::rent_collector::RentCollector;
 use solana_sdk::slot_history::Slot;
 use solana_sdk::stake::state::Delegation;
-use std::collections::{HashMap, HashSet};
-use std::io::Read;
 
 const MAX_STREAM_SIZE: u64 = 32 * 1024 * 1024 * 1024;
 
