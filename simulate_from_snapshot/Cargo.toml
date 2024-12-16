@@ -40,5 +40,5 @@ tower = "0.4.13"
 tower-http = { version = "0.4.0", features = ["full"] }
 
 
-quic-geyser-client = { git = "https://github.com/blockworks-foundation/quic_geyser_plugin.git", branch = "main" }
-quic-geyser-common = { git = "https://github.com/blockworks-foundation/quic_geyser_plugin.git", branch = "main" }
+quic-geyser-client = { git = "https://github.com/blockworks-foundation/quic_geyser_plugin.git", tag = "v0.1.6_solana+2.0.15" }
+quic-geyser-common = { git = "https://github.com/blockworks-foundation/quic_geyser_plugin.git", tag = "v0.1.6_solana+2.0.15" }
