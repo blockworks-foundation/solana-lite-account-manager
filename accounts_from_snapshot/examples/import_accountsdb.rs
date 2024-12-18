@@ -1,3 +1,4 @@
+use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::env;
 use std::num::NonZeroUsize;
@@ -6,6 +7,7 @@ use std::str::FromStr;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::{Arc, Once};
+use std::thread::spawn;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use futures::executor::block_on;
@@ -15,7 +17,6 @@ use log::{info, warn};
 use solana_sdk::clock::{Slot, UnixTimestamp};
 use solana_sdk::pubkey::Pubkey;
 use tokio::sync::mpsc::Receiver;
-use tokio::sync::OnceCell;
 use tokio::task::{spawn_blocking, JoinHandle};
 use tokio::time::{sleep, Duration};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
@@ -27,7 +28,7 @@ use yellowstone_grpc_proto::geyser::{
 use lite_account_manager_common::account_data::{Account, AccountData, Data};
 use lite_account_manager_common::account_store_interface::AccountStorageInterface;
 use lite_account_storage::accountsdb::AccountsDb;
-use lite_accounts_from_storage::{import, Config, HostUrl, Loader};
+use lite_accounts_from_storage::{start_backfill_import_from_snapshot, Config, HostUrl, Loader};
 
 type AtomicSlot = Arc<AtomicU64>;
 
@@ -63,7 +64,7 @@ pub async fn main() {
         exit_rx.resubscribe(),
     );
 
-    static IMPORT_SNAPSHOT_ONCE: Once = Once::new();
+    let first_slot_from_stream: OnceCell<Slot> = OnceCell::new();
     let db = Arc::new(AccountsDb::new());
     let mut accounts_rx = account_stream(geyser_rx);
 
@@ -71,14 +72,19 @@ pub async fn main() {
         let account = accounts_rx.recv().await.unwrap();
         let slot = account.updated_slot;
 
-        IMPORT_SNAPSHOT_ONCE.call_once(|| import_snapshots(slot, db.clone()));
+        if let Ok(()) = first_slot_from_stream.set(slot) {
+            start_backfill(slot, db.clone());
+        }
+
         db.initilize_or_update_account(account);
     }
 }
 
-fn import_snapshots(slot: Slot, db: Arc<AccountsDb>) {
+fn start_backfill(not_before_slot: Slot, db: Arc<AccountsDb>) {
     let config = Config {
         hosts: vec![
+            // testnet validator in /home/groovie on fcs-ams1
+            HostUrl::from_str("http://178.237.58.250:19899").unwrap(),
             HostUrl::from_str("http://147.28.178.75:8899").unwrap(),
             HostUrl::from_str("http://204.13.239.110:8899").unwrap(),
             HostUrl::from_str("http://149.50.110.119:8899").unwrap(),
@@ -88,13 +94,16 @@ fn import_snapshots(slot: Slot, db: Arc<AccountsDb>) {
             HostUrl::from_str("http://205.209.109.158:8899").unwrap(),
         ]
         .into_boxed_slice(),
-        not_before_slot: slot,
+        not_before_slot,
         full_snapshot_path: PathBuf::from_str("/tmp/full-snapshot").unwrap(),
         incremental_snapshot_path: PathBuf::from_str("/tmp/incremental-snapshot").unwrap(),
         maximum_full_snapshot_archives_to_retain: NonZeroUsize::new(10).unwrap(),
         maximum_incremental_snapshot_archives_to_retain: NonZeroUsize::new(10).unwrap(),
     };
-    let _ = import(config, db);
+
+    info!("Starting backfill import from snapshot from {} RPC hosts for slot >= {}", config.hosts.len(), not_before_slot);
+
+    let _ = start_backfill_import_from_snapshot(config, db);
 }
 
 fn account_stream(mut geyser_messages_rx: Receiver<Message>) -> Receiver<AccountData> {

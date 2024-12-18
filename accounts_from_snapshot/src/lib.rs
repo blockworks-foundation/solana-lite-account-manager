@@ -55,7 +55,7 @@ pub struct Config {
     pub maximum_incremental_snapshot_archives_to_retain: NonZeroUsize,
 }
 
-pub fn import(cfg: Config, db: Arc<AccountsDb>) -> JoinHandle<()> {
+pub fn start_backfill_import_from_snapshot(cfg: Config, db: Arc<AccountsDb>) -> JoinHandle<()> {
     tokio::spawn(async move {
         let loader = Loader::new(cfg);
 
