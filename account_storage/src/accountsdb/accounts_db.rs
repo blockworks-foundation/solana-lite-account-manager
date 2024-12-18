@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use itertools::Itertools;
 use solana_accounts_db::accounts::Accounts;
 use solana_accounts_db::accounts_db::{
-    AccountsDb as SolanaAccountsDb, AccountsDbConfig, AccountShrinkThreshold, CreateAncientStorage,
+    AccountShrinkThreshold, AccountsDb as SolanaAccountsDb, AccountsDbConfig, CreateAncientStorage,
 };
 use solana_accounts_db::accounts_file::StorageAccess;
 use solana_accounts_db::accounts_index::{
@@ -190,16 +190,28 @@ impl AccountStorageInterface for AccountsDb {
         let (mut processed, mut confirmed, mut finalized) = self.slot_state.get();
         match commitment {
             Commitment::Processed => {
-                if slot > processed { processed = slot; }
+                if slot > processed {
+                    processed = slot;
+                }
             }
             Commitment::Confirmed => {
-                if slot > processed { processed = slot; }
-                if slot > confirmed { confirmed = slot; }
+                if slot > processed {
+                    processed = slot;
+                }
+                if slot > confirmed {
+                    confirmed = slot;
+                }
             }
             Commitment::Finalized => {
-                if slot > processed { processed = slot }
-                if slot > confirmed { confirmed = slot }
-                if slot > finalized { finalized = slot }
+                if slot > processed {
+                    processed = slot
+                }
+                if slot > confirmed {
+                    confirmed = slot
+                }
+                if slot > finalized {
+                    finalized = slot
+                }
             }
         }
 

@@ -19,15 +19,15 @@ repository = "https://github.com/blockworks-foundation/solana-lite-account-manag
 license = "AGPL"
 
 [workspace.dependencies]
-solana-sdk = "~2.0.15"
-solana-rpc-client = "~2.0.15"
-solana-account-decoder = "~2.0.15"
-solana-client = "~2.0.15"
-solana-program = "~2.0.15"
-solana-accounts-db = "~2.0.15"
-solana-frozen-abi-macro = "~2.0.15"
-solana-runtime = "~2.0.15"
-solana-rpc-client-api = "~2.0.15"
+solana-sdk = "=2.0.16"
+solana-rpc-client = "=2.0.16"
+solana-account-decoder = "=2.0.16"
+solana-client = "=2.0.16"
+solana-program = "=2.0.16"
+solana-accounts-db = "=2.0.16"
+solana-frozen-abi-macro = "=2.0.16"
+solana-runtime = "=2.0.16"
+solana-rpc-client-api = "=2.0.16"
 
 async-trait = "0.1.68"
 dashmap = "5.4.0"
@@ -55,6 +55,9 @@ spl-token-2022 = "5.0.2"
 
 thiserror = "2.0.7"
 tokio = { version = "1.42.0", features = ["rt-multi-thread", "macros"]}
+
+yellowstone-grpc-proto = { git = "https://github.com/rpcpool/yellowstone-grpc.git", tag = "v2.0.0+solana.2.0.16" }
+geyser-grpc-connector = { git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git", tag = "v0.11.0+yellowstone.2.0.0+solana.2.0" }
 
 lite-account-manager-common = { path = "common", version = "0.1.0" }
 lite-account-storage = { path = "account_storage", version = "0.1.0" }

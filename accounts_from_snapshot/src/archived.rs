@@ -1,8 +1,7 @@
 use {
     crate::{
-        deserialize_from, parse_append_vec_name, AccountsDbFields, AppendVecIterator,
-        DeserializableVersionedBank, SerializableAccountStorageEntry, SnapshotError,
-        SnapshotExtractor, SnapshotResult,
+        deserialize_from, AccountsDbFields, DeserializableVersionedBank,
+        SerializableAccountStorageEntry,
     },
     log::info,
     std::{
@@ -16,6 +15,9 @@ use {
 };
 
 use crate::append_vec::AppendVec;
+use crate::core::{
+    parse_append_vec_name, AppendVecIterator, SnapshotError, SnapshotExtractor, SnapshotResult,
+};
 
 /// Extracts account data from a .tar.zst stream.
 pub struct ArchiveSnapshotExtractor<Source>
