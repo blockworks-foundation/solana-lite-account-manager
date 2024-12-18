@@ -3,6 +3,7 @@ resolver = "2"
 
 members = [
     "account_storage",
+    "accounts_from_snapshot",
     "accounts_on_demand",
     "common",
     "token_account_storage",
@@ -28,6 +29,7 @@ solana-frozen-abi-macro = "~2.0.15"
 solana-runtime = "~2.0.15"
 solana-rpc-client-api = "~2.0.15"
 
+async-trait = "0.1.68"
 dashmap = "5.4.0"
 serde = { version = "1.0.160", features = ["derive"] }
 serde_json = "1.0.96"
@@ -51,7 +53,15 @@ arrayref = "0.3.7"
 spl-token = "6.0.0"
 spl-token-2022 = "5.0.2"
 
-lite-account-manager-common = {path = "common", version="0.1.0"}
-lite-account-storage = {path = "account_storage", version="0.1.0"}
-lite-accounts-on-demand = {path = "accounts_on_demand", version="0.1.0"}
-lite-token-account-storage = {path = "token_account_storage", version="0.1.0"}
+thiserror = "2.0.7"
+tokio = { version = "1.42.0", features = ["rt-multi-thread", "macros"]}
+
+lite-account-manager-common = { path = "common", version = "0.1.0" }
+lite-account-storage = { path = "account_storage", version = "0.1.0" }
+lite-accounts-from-snapshot = { path = "accounts_from_snapshot", version = "0.1.0" }
+lite-accounts-on-demand = { path = "accounts_on_demand", version = "0.1.0" }
+lite-token-account-storage = { path = "token_account_storage", version = "0.1.0" }
+
+[patch.crates-io.curve25519-dalek]
+git = "https://github.com/anza-xyz/curve25519-dalek.git"
+rev = "b500cdc2a920cd5bff9e2dd974d7b97349d61464"

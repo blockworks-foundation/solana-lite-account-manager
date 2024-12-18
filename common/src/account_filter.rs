@@ -1,9 +1,10 @@
+use std::str::FromStr;
+
 use base64::Engine;
 use itertools::Itertools;
 use serde::{ser::SerializeMap, Deserialize, Serialize};
 use solana_rpc_client_api::filter::{Memcmp as RpcMemcmp, MemcmpEncodedBytes, RpcFilterType};
 use solana_sdk::pubkey::Pubkey;
-use std::str::FromStr;
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug, PartialOrd, Ord)]
 #[serde(rename_all = "camelCase")]
@@ -21,6 +22,10 @@ pub struct MemcmpFilter {
 }
 
 impl MemcmpFilter {
+    pub fn new(offset: u64, data: MemcmpFilterData) -> Self {
+        Self { offset, data }
+    }
+
     pub fn bytes(&self) -> Vec<u8> {
         match &self.data {
             MemcmpFilterData::Bytes(bytes) => bytes.clone(),
@@ -288,7 +293,7 @@ mod test {
                 program_id: Some(
                     Pubkey::from_str("4MangoMjqJ2firMokCjjGgoK8d4MXcrgL7XJaL3w6fVg").unwrap()
                 ),
-                filters: Some(vec![AccountFilterType::Datasize(200)])
+                filters: Some(vec![AccountFilterType::Datasize(200)]),
             }
         );
 
@@ -302,9 +307,9 @@ mod test {
                 filters: Some(vec![AccountFilterType::Memcmp(MemcmpFilter {
                     offset: 100,
                     data: MemcmpFilterData::Bytes(vec![
-                        115, 101, 114, 117, 109, 5, 0, 0, 0, 0, 0, 0, 0
-                    ])
-                })])
+                        115, 101, 114, 117, 109, 5, 0, 0, 0, 0, 0, 0, 0,
+                    ]),
+                })]),
             }
         );
 
@@ -315,7 +320,7 @@ mod test {
                 program_id: Some(
                     Pubkey::from_str("4MangoMjqJ2firMokCjjGgoK8d4MXcrgL7XJaL3w6fVg").unwrap()
                 ),
-                filters: None
+                filters: None,
             }
         );
 
@@ -331,10 +336,10 @@ mod test {
                     AccountFilterType::Memcmp(MemcmpFilter {
                         offset: 100,
                         data: MemcmpFilterData::Bytes(vec![
-                            115, 101, 114, 117, 109, 5, 0, 0, 0, 0, 0, 0, 0
-                        ])
-                    })
-                ])
+                            115, 101, 114, 117, 109, 5, 0, 0, 0, 0, 0, 0, 0,
+                        ]),
+                    }),
+                ]),
             }
         );
 
@@ -343,10 +348,10 @@ mod test {
             AccountFilter {
                 accounts: vec![
                     Pubkey::from_str("4MangoMjqJ2firMokCjjGgoK8d4MXcrgL7XJaL3w6fVg").unwrap(),
-                    Pubkey::from_str("srmqPvymJeFKQ4zGQed1GFppgkRHL9kaELCbyksJtPX").unwrap()
+                    Pubkey::from_str("srmqPvymJeFKQ4zGQed1GFppgkRHL9kaELCbyksJtPX").unwrap(),
                 ],
                 program_id: None,
-                filters: None
+                filters: None,
             }
         );
     }
