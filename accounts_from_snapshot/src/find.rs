@@ -63,7 +63,7 @@ pub async fn latest_full_snapshot(
     snapshots
         .into_iter()
         .max_by(|left, right| left.slot.cmp(&right.slot))
-        .ok_or_else(|| anyhow!("Unable to find snapshot after {}", not_before_slot))
+        .ok_or_else(|| anyhow!("Unable to find full snapshot after {}", not_before_slot))
 }
 
 pub async fn latest_incremental_snapshot(
@@ -105,7 +105,7 @@ pub async fn latest_incremental_snapshot(
         .max_by(|left, right| left.full_slot.cmp(&right.full_slot))
         .ok_or_else(|| {
             anyhow!(
-                "Unable to find snapshot after {}",
+                "Unable to find incremental snapshot after {}",
                 not_before_incremental_slot
             )
         })
