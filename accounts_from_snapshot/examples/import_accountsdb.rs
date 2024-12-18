@@ -81,6 +81,10 @@ pub async fn main() {
 }
 
 fn start_backfill(not_before_slot: Slot, db: Arc<AccountsDb>) {
+    let temp_dir = env::temp_dir();
+    let full_snapshot_path = temp_dir.join("full-snapshot");
+    let incremental_snapshot_path = temp_dir.join("incremental-snapshot");
+
     let config = Config {
         hosts: vec![
             // testnet validator in /home/groovie on fcs-ams1
@@ -95,8 +99,8 @@ fn start_backfill(not_before_slot: Slot, db: Arc<AccountsDb>) {
         ]
         .into_boxed_slice(),
         not_before_slot,
-        full_snapshot_path: PathBuf::from_str("/tmp/full-snapshot").unwrap(),
-        incremental_snapshot_path: PathBuf::from_str("/tmp/incremental-snapshot").unwrap(),
+        full_snapshot_path,
+        incremental_snapshot_path,
         maximum_full_snapshot_archives_to_retain: NonZeroUsize::new(10).unwrap(),
         maximum_incremental_snapshot_archives_to_retain: NonZeroUsize::new(10).unwrap(),
     };
