@@ -23,7 +23,7 @@ pub enum SnapshotError {
 
 pub type SnapshotResult<T> = Result<T, SnapshotError>;
 
-pub type AppendVecIterator<'a> = Box<dyn Iterator<Item=SnapshotResult<AppendVec>> + 'a>;
+pub type AppendVecIterator<'a> = Box<dyn Iterator<Item = SnapshotResult<AppendVec>> + 'a>;
 
 pub trait SnapshotExtractor: Sized {
     fn iter(&mut self) -> AppendVecIterator<'_>;
@@ -40,7 +40,9 @@ pub(crate) fn parse_append_vec_name(name: &OsStr) -> Option<(u64, u64)> {
     }
 }
 
-pub(crate) fn append_vec_iter(append_vec: &AppendVec) -> impl Iterator<Item=StoredAccountMetaHandle> {
+pub(crate) fn append_vec_iter(
+    append_vec: &AppendVec,
+) -> impl Iterator<Item = StoredAccountMetaHandle> {
     let mut offset = 0usize;
     std::iter::repeat_with(move || {
         append_vec.get_account(offset).map(|(_, next_offset)| {
@@ -49,8 +51,8 @@ pub(crate) fn append_vec_iter(append_vec: &AppendVec) -> impl Iterator<Item=Stor
             account
         })
     })
-        .take_while(|account| account.is_some())
-        .filter_map(|account| account)
+    .take_while(|account| account.is_some())
+    .filter_map(|account| account)
 }
 
 pub struct StoredAccountMetaHandle<'a> {

@@ -29,8 +29,8 @@ use solana_sdk::clock::Slot;
 use tokio::task;
 use tokio::task::JoinHandle;
 
-use crate::{Config, HostUrl};
 use crate::find::{latest_full_snapshot, latest_incremental_snapshot};
+use crate::{Config, HostUrl};
 
 pub struct Loader {
     cfg: Config,
@@ -55,7 +55,8 @@ impl Loader {
     }
 
     pub async fn load_latest_snapshot(&self) -> anyhow::Result<FullSnapshot> {
-        let snapshot = latest_full_snapshot(self.cfg.hosts.to_vec(), self.cfg.not_before_slot).await?;
+        let snapshot =
+            latest_full_snapshot(self.cfg.hosts.to_vec(), self.cfg.not_before_slot).await?;
 
         self.ensure_paths_exists().await;
 
@@ -68,8 +69,8 @@ impl Loader {
             self.cfg.maximum_full_snapshot_archives_to_retain,
             self.cfg.maximum_incremental_snapshot_archives_to_retain,
         )
-            .await
-            .await??;
+        .await
+        .await??;
 
         Ok(FullSnapshot {
             path,
@@ -78,8 +79,8 @@ impl Loader {
     }
 
     pub async fn load_latest_incremental_snapshot(&self) -> anyhow::Result<IncrementalSnapshot> {
-        let snapshot = latest_incremental_snapshot(self.cfg.hosts.to_vec(), self.cfg.not_before_slot)
-            .await?;
+        let snapshot =
+            latest_incremental_snapshot(self.cfg.hosts.to_vec(), self.cfg.not_before_slot).await?;
 
         let path = download_snapshot(
             snapshot.host,
@@ -90,8 +91,8 @@ impl Loader {
             self.cfg.maximum_full_snapshot_archives_to_retain,
             self.cfg.maximum_incremental_snapshot_archives_to_retain,
         )
-            .await
-            .await??;
+        .await
+        .await??;
 
         Ok(IncrementalSnapshot {
             path,
@@ -106,11 +107,12 @@ impl Loader {
 
         let _ = tokio::spawn(async move {
             create_dir_all(full_snapshot_path).expect("Unable to create snapshot path");
-            create_dir_all(incremental_snapshot_path).expect("Unable to create incremental snapshot path");
-        }).await;
+            create_dir_all(incremental_snapshot_path)
+                .expect("Unable to create incremental snapshot path");
+        })
+        .await;
     }
 }
-
 
 pub(crate) async fn download_snapshot(
     host: HostUrl,

@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Context};
 use log::debug;
-use reqwest::Client;
 use reqwest::redirect::Policy;
+use reqwest::Client;
 use solana_runtime::snapshot_hash::SnapshotHash;
 use solana_sdk::clock::Slot;
 use solana_sdk::hash::Hash;
@@ -28,7 +28,7 @@ pub struct LatestIncrementalSnapshot {
 }
 
 pub async fn latest_full_snapshot(
-    hosts: impl IntoIterator<Item=HostUrl>,
+    hosts: impl IntoIterator<Item = HostUrl>,
     not_before_slot: Slot,
 ) -> anyhow::Result<LatestFullSnapshot> {
     let hosts_and_uris = collect_redirects(hosts, "snapshot.tar.bz2").await?;
@@ -67,7 +67,7 @@ pub async fn latest_full_snapshot(
 }
 
 pub async fn latest_incremental_snapshot(
-    hosts: impl IntoIterator<Item=HostUrl>,
+    hosts: impl IntoIterator<Item = HostUrl>,
     not_before_incremental_slot: Slot,
 ) -> anyhow::Result<LatestIncrementalSnapshot> {
     let hosts_and_uris = collect_redirects(hosts, "incremental-snapshot.tar.bz2").await?;
@@ -103,11 +103,16 @@ pub async fn latest_incremental_snapshot(
     snapshots
         .into_iter()
         .max_by(|left, right| left.full_slot.cmp(&right.full_slot))
-        .ok_or_else(|| anyhow!("Unable to find snapshot after {}", not_before_incremental_slot))
+        .ok_or_else(|| {
+            anyhow!(
+                "Unable to find snapshot after {}",
+                not_before_incremental_slot
+            )
+        })
 }
 
 pub(crate) async fn collect_redirects(
-    hosts: impl IntoIterator<Item=HostUrl>,
+    hosts: impl IntoIterator<Item = HostUrl>,
     path: &str,
 ) -> anyhow::Result<Vec<(HostUrl, String)>> {
     let client = Client::builder()

@@ -13,7 +13,9 @@ use lite_account_manager_common::account_store_interface::AccountStorageInterfac
 use crate::archived::ArchiveSnapshotExtractor;
 use crate::core::{append_vec_iter, SnapshotExtractor};
 
-pub(crate) async fn import_archive(archive_path: PathBuf) -> (Receiver<AccountData>, JoinHandle<()>) {
+pub(crate) async fn import_archive(
+    archive_path: PathBuf,
+) -> (Receiver<AccountData>, JoinHandle<()>) {
     let (tx, rx) = mpsc::channel::<AccountData>(10_000);
 
     let handle: JoinHandle<()> = tokio::task::spawn_blocking(move || {
@@ -23,7 +25,7 @@ pub(crate) async fn import_archive(archive_path: PathBuf) -> (Receiver<AccountDa
                     "Unable to load archive file: {}",
                     archive_path.to_str().unwrap()
                 )
-                    .as_str(),
+                .as_str(),
             );
 
         for append_vec in extractor.iter() {
@@ -48,8 +50,8 @@ pub(crate) async fn import_archive(archive_path: PathBuf) -> (Receiver<AccountDa
                             updated_slot: append_vec.slot(),
                             write_version: 0,
                         })
-                            .await
-                            .expect("Failed to send account data");
+                        .await
+                        .expect("Failed to send account data");
                     }
                 }
             });
