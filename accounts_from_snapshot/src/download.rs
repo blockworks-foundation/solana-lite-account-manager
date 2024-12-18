@@ -15,11 +15,11 @@
 // This file contains code vendored from https://github.com/solana-labs/solana
 
 use std::fs;
+use std::fs::create_dir_all;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 use anyhow::bail;
-use log::info;
 use solana_download_utils::download_file;
 use solana_runtime::snapshot_hash::SnapshotHash;
 use solana_runtime::snapshot_package::SnapshotKind;
@@ -29,7 +29,88 @@ use solana_sdk::clock::Slot;
 use tokio::task;
 use tokio::task::JoinHandle;
 
-use crate::snapshot::HostUrl;
+use crate::{Config, HostUrl};
+use crate::find::{latest_full_snapshot, latest_incremental_snapshot};
+
+pub struct Loader {
+    cfg: Config,
+}
+
+#[derive(Debug)]
+pub struct FullSnapshot {
+    pub path: PathBuf,
+    pub slot: Slot,
+}
+
+#[derive(Debug)]
+pub struct IncrementalSnapshot {
+    pub path: PathBuf,
+    pub full_slot: Slot,
+    pub incremental_slot: Slot,
+}
+
+impl Loader {
+    pub fn new(cfg: Config) -> Self {
+        Self { cfg }
+    }
+
+    pub async fn load_latest_snapshot(&self) -> anyhow::Result<FullSnapshot> {
+        let snapshot = latest_full_snapshot(self.cfg.hosts.to_vec(), self.cfg.not_before_slot).await?;
+
+        self.ensure_paths_exists().await;
+
+        let path = download_snapshot(
+            snapshot.host,
+            self.cfg.full_snapshot_path.clone(),
+            self.cfg.incremental_snapshot_path.clone(),
+            (snapshot.slot, snapshot.hash),
+            SnapshotKind::FullSnapshot,
+            self.cfg.maximum_full_snapshot_archives_to_retain,
+            self.cfg.maximum_incremental_snapshot_archives_to_retain,
+        )
+            .await
+            .await??;
+
+        Ok(FullSnapshot {
+            path,
+            slot: snapshot.slot,
+        })
+    }
+
+    pub async fn load_latest_incremental_snapshot(&self) -> anyhow::Result<IncrementalSnapshot> {
+        let snapshot = latest_incremental_snapshot(self.cfg.hosts.to_vec(), self.cfg.not_before_slot)
+            .await?;
+
+        let path = download_snapshot(
+            snapshot.host,
+            self.cfg.full_snapshot_path.clone(),
+            self.cfg.incremental_snapshot_path.clone(),
+            (snapshot.incremental_slot, snapshot.hash),
+            SnapshotKind::IncrementalSnapshot(snapshot.full_slot),
+            self.cfg.maximum_full_snapshot_archives_to_retain,
+            self.cfg.maximum_incremental_snapshot_archives_to_retain,
+        )
+            .await
+            .await??;
+
+        Ok(IncrementalSnapshot {
+            path,
+            full_slot: snapshot.full_slot,
+            incremental_slot: snapshot.incremental_slot,
+        })
+    }
+
+    async fn ensure_paths_exists(&self) {
+        let full_snapshot_path = self.cfg.full_snapshot_path.clone();
+        let incremental_snapshot_path = self.cfg.incremental_snapshot_path.clone();
+
+        let _ = tokio::spawn(async move {
+            create_dir_all(full_snapshot_path).expect("Unable to create snapshot path");
+            create_dir_all(incremental_snapshot_path).expect("Unable to create incremental snapshot path");
+        }).await;
+    }
+}
+
 
 pub(crate) async fn download_snapshot(
     host: HostUrl,
@@ -39,7 +120,6 @@ pub(crate) async fn download_snapshot(
     snapshot_kind: SnapshotKind,
     maximum_full_snapshot_archives_to_retain: NonZeroUsize,
     maximum_incremental_snapshot_archives_to_retain: NonZeroUsize,
-    use_progress_bar: bool,
 ) -> JoinHandle<anyhow::Result<PathBuf>> {
     task::spawn_blocking(move || {
         let full_snapshot_archives_dir = &full_snapshot_archives_dir;
@@ -82,13 +162,6 @@ pub(crate) async fn download_snapshot(
                 return Ok(destination_path);
             }
 
-            let url = format!(
-                "{}/{}",
-                host.0,
-                destination_path.file_name().unwrap().to_str().unwrap()
-            );
-            info!("Attempt to download: {}", &url);
-
             match download_file(
                 &format!(
                     "{}/{}",
@@ -96,7 +169,7 @@ pub(crate) async fn download_snapshot(
                     destination_path.file_name().unwrap().to_str().unwrap()
                 ),
                 &destination_path,
-                use_progress_bar,
+                false,
                 &mut None,
             ) {
                 Ok(()) => return Ok(destination_path),

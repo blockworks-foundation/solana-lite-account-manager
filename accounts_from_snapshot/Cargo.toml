@@ -9,6 +9,7 @@ publish = false
 
 [dependencies]
 lite-account-manager-common = { workspace = true }
+lite-account-storage = { workspace = true}
 
 solana-frozen-abi-macro = { workspace = true }
 solana-runtime = { workspace = true }
@@ -37,6 +38,10 @@ tokio = { workspace = true }
 # loader
 reqwest = { version = "0.12.9", features = ["blocking", "brotli", "deflate", "gzip", "rustls-tls", "json"] }
 solana-download-utils = "2.0.15"
+
+yellowstone-grpc-proto = { workspace = true }
+geyser-grpc-connector = { workspace = true }
+tracing-subscriber = "0.3.19"
 
 [lints.clippy]
 clone_on_ref_ptr = "deny"

@@ -1,79 +1,101 @@
-pub use importer::import;
-use thiserror::Error;
+use std::fmt::{Display, Formatter};
+use std::num::NonZeroUsize;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+
+use log::{info, warn};
+use solana_sdk::clock::Slot;
+use tokio::task::JoinHandle;
+use tokio::time::sleep;
+
 use {
     crate::solana::{
-        deserialize_from, AccountsDbFields, DeserializableVersionedBank,
+        AccountsDbFields, DeserializableVersionedBank, deserialize_from,
         SerializableAccountStorageEntry,
     },
-    append_vec::{AppendVec, StoredAccountMeta},
-    std::{ffi::OsStr, str::FromStr},
+    std::str::FromStr,
 };
+pub use download::*;
+use lite_account_manager_common::account_store_interface::AccountStorageInterface;
+use lite_account_storage::accountsdb::AccountsDb;
 
-pub(crate) mod append_vec;
-pub(crate) mod archived;
-mod importer;
-pub mod snapshot;
-pub(crate) mod solana; // FIXME pub(crate)
+use crate::import::import_archive;
 
-#[derive(Error, Debug)]
-pub enum SnapshotError {
-    #[error("{0}")]
-    IOError(#[from] std::io::Error),
-    #[error("Failed to deserialize: {0}")]
-    BincodeError(#[from] bincode::Error),
-    #[error("Missing status cache")]
-    NoStatusCache,
-    #[error("No snapshot manifest file found")]
-    NoSnapshotManifest,
-    #[error("Unexpected AppendVec")]
-    UnexpectedAppendVec,
-    #[error("Failed to create read progress tracking: {0}")]
-    ReadProgressTracking(String),
-}
+mod append_vec;
+mod archived;
+pub(crate) mod import;
+mod solana;
+mod download;
+mod find;
+mod core;
 
-pub type SnapshotResult<T> = Result<T, SnapshotError>;
+#[derive(Clone, Debug)]
+pub struct HostUrl(String);
 
-pub type AppendVecIterator<'a> = Box<dyn Iterator<Item = SnapshotResult<AppendVec>> + 'a>;
-
-pub trait SnapshotExtractor: Sized {
-    fn iter(&mut self) -> AppendVecIterator<'_>;
-}
-
-fn parse_append_vec_name(name: &OsStr) -> Option<(u64, u64)> {
-    let name = name.to_str()?;
-    let mut parts = name.splitn(2, '.');
-    let slot = u64::from_str(parts.next().unwrap_or(""));
-    let id = u64::from_str(parts.next().unwrap_or(""));
-    match (slot, id) {
-        (Ok(slot), Ok(version)) => Some((slot, version)),
-        _ => None,
+impl Display for HostUrl {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
-pub fn append_vec_iter(append_vec: &AppendVec) -> impl Iterator<Item = StoredAccountMetaHandle> {
-    let mut offset = 0usize;
-    std::iter::repeat_with(move || {
-        append_vec.get_account(offset).map(|(_, next_offset)| {
-            let account = StoredAccountMetaHandle::new(append_vec, offset);
-            offset = next_offset;
-            account
-        })
+impl FromStr for HostUrl {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(HostUrl(s.to_string()))
+    }
+}
+
+pub struct Config {
+    pub hosts: Box<[HostUrl]>,
+    pub not_before_slot: Slot,
+    pub full_snapshot_path: PathBuf,
+    pub incremental_snapshot_path: PathBuf,
+    pub maximum_full_snapshot_archives_to_retain: NonZeroUsize,
+    pub maximum_incremental_snapshot_archives_to_retain: NonZeroUsize,
+}
+
+pub fn import(cfg: Config, db: Arc<AccountsDb>) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        let loader = Loader::new(cfg);
+
+        let incremental_snapshot = loop {
+            match loader.load_latest_incremental_snapshot().await {
+                Ok(snapshot) => break snapshot,
+                Err(e) => {
+                    warn!("Unable to download incremental snapshot: {}", e.to_string());
+                    sleep(Duration::from_secs(30)).await;
+                }
+            }
+        };
+        info!("{incremental_snapshot:#?}");
+
+        let full_snapshot = loop {
+            match loader.load_latest_snapshot().await {
+                Ok(snapshot) => break snapshot,
+                Err(e) => {
+                    warn!("Unable to download full snapshot: {}", e.to_string());
+                    sleep(Duration::from_secs(30)).await;
+                }
+            }
+        };
+        info!("{full_snapshot:#?}");
+
+        info!("Start importing accounts from full snapshot");
+        let (mut accounts_rx, _) = import_archive(full_snapshot.path).await;
+        while let Some(account) = accounts_rx.recv().await {
+            db.initilize_or_update_account(account)
+        }
+
+        info!("Start importing accounts from incremental snapshot");
+        let (mut accounts_rx, _) = import_archive(incremental_snapshot.path).await;
+        while let Some(account) = accounts_rx.recv().await {
+            db.initilize_or_update_account(account)
+        }
+
+        info!("Finished importing accounts from snapshots")
     })
-    .take_while(|account| account.is_some())
-    .filter_map(|account| account)
 }
 
-pub struct StoredAccountMetaHandle<'a> {
-    append_vec: &'a AppendVec,
-    offset: usize,
-}
 
-impl<'a> StoredAccountMetaHandle<'a> {
-    pub const fn new(append_vec: &'a AppendVec, offset: usize) -> StoredAccountMetaHandle {
-        Self { append_vec, offset }
-    }
 
-    pub fn access(&self) -> Option<StoredAccountMeta<'_>> {
-        Some(self.append_vec.get_account(self.offset)?.0)
-    }
-}
