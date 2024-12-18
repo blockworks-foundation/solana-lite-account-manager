@@ -13,7 +13,7 @@ use tokio::task;
 use crate::HostUrl;
 
 #[derive(Debug)]
-pub struct LatestFullSnapshot {
+pub struct FullSnapshot {
     pub host: HostUrl,
     pub slot: Slot,
     pub hash: SnapshotHash,
@@ -27,10 +27,50 @@ pub struct LatestIncrementalSnapshot {
     pub hash: SnapshotHash,
 }
 
+
+pub async fn find_full_snapshot(
+    hosts: impl IntoIterator<Item = HostUrl>,
+    slot: Slot,
+) -> anyhow::Result<FullSnapshot> {
+    let hosts_and_uris = collect_redirects(hosts, "snapshot.tar.bz2").await?;
+
+    let mut snapshots = Vec::with_capacity(hosts_and_uris.len());
+
+    for (host, uri) in hosts_and_uris {
+        if let Some(data) = uri
+            .strip_prefix("/snapshot-")
+            .and_then(|s| s.strip_suffix(".tar.zst"))
+        {
+            let parts: Vec<&str> = data.split('-').collect();
+
+            if parts.len() == 2 {
+                let full_slot = parts[0].parse::<u64>().unwrap();
+
+                debug!("{} has snapshot of {}", &host, full_slot);
+                if full_slot != slot {
+                    continue;
+                }
+
+                let hash = SnapshotHash(Hash::from_str(parts[1]).unwrap());
+                snapshots.push(FullSnapshot {
+                    host: host.clone(),
+                    slot: full_slot,
+                    hash,
+                })
+            }
+        }
+    }
+
+    snapshots
+        .into_iter()
+        .max_by(|left, right| left.slot.cmp(&right.slot))
+        .ok_or_else(|| anyhow!("Unable to find full snapshot at slot {}", slot))
+}
+
 pub async fn latest_full_snapshot(
     hosts: impl IntoIterator<Item = HostUrl>,
     not_before_slot: Slot,
-) -> anyhow::Result<LatestFullSnapshot> {
+) -> anyhow::Result<FullSnapshot> {
     let hosts_and_uris = collect_redirects(hosts, "snapshot.tar.bz2").await?;
 
     let mut snapshots = Vec::with_capacity(hosts_and_uris.len());
@@ -51,7 +91,7 @@ pub async fn latest_full_snapshot(
                 }
 
                 let hash = SnapshotHash(Hash::from_str(parts[1]).unwrap());
-                snapshots.push(LatestFullSnapshot {
+                snapshots.push(FullSnapshot {
                     host: host.clone(),
                     slot: full_slot,
                     hash,
