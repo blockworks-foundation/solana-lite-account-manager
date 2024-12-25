@@ -2,9 +2,13 @@ use std::{
     collections::{BTreeSet, HashMap},
     sync::{Arc, Mutex, RwLockReadGuard},
 };
+use std::collections::BTreeMap;
+use std::sync::RwLock;
 
-use crate::account_data_by_commitment::AccountDataByCommitment;
 use dashmap::DashMap;
+use prometheus::{IntGauge, opts, register_int_gauge};
+use solana_sdk::{pubkey::Pubkey, slot_history::Slot};
+
 use lite_account_manager_common::{
     account_data::AccountData,
     account_filter::{AccountFilter, AccountFilterType},
@@ -13,10 +17,8 @@ use lite_account_manager_common::{
     commitment::Commitment,
     slot_info::SlotInfo,
 };
-use prometheus::{opts, register_int_gauge, IntGauge};
-use solana_sdk::{pubkey::Pubkey, slot_history::Slot};
-use std::collections::BTreeMap;
-use std::sync::RwLock;
+
+use crate::account_data_by_commitment::AccountDataByCommitment;
 
 lazy_static::lazy_static! {
     static ref ACCOUNT_STORED_IN_MEMORY: IntGauge =
@@ -36,6 +38,7 @@ struct SlotStatus {
 }
 
 type AccountIndex = usize;
+
 pub struct InmemoryAccountStore {
     pubkey_to_account_index: Arc<DashMap<Pubkey, AccountIndex>>,
     accounts_by_owner: Arc<DashMap<Pubkey, Arc<RwLock<BTreeSet<AccountIndex>>>>>,
@@ -264,6 +267,7 @@ impl AccountStorageInterface for InmemoryAccountStore {
     }
 
     fn initilize_or_update_account(&self, account_data: AccountData) {
+        println!("{}", account_data.pubkey);
         self.update_account(account_data, Commitment::Finalized);
     }
 
@@ -437,11 +441,11 @@ impl AccountStorageInterface for InmemoryAccountStore {
                     if (prev_account_data.account.owner != account_data.account.owner
                         || account_data.account.lamports == 0)
                         && self.update_owner_delete_if_necessary(
-                            &prev_account_data,
-                            &account_data,
-                            writable_account_index,
-                            commitment,
-                        )
+                        &prev_account_data,
+                        &account_data,
+                        writable_account_index,
+                        commitment,
+                    )
                     {
                         self.pubkey_to_account_index.remove(&account_data.pubkey);
                         writable_lk.delete();
@@ -477,13 +481,15 @@ impl AccountStorageInterface for InmemoryAccountStore {
 mod tests {
     use std::{collections::HashSet, sync::Arc};
 
-    use crate::inmemory_account_store::InmemoryAccountStore;
     use base64::Engine;
     use itertools::Itertools;
+    use rand::{Rng, rngs::ThreadRng};
+    use solana_sdk::{account::Account as SolanaAccount, pubkey::Pubkey, slot_history::Slot};
+
     use lite_account_manager_common::{
         account_data::{Account, AccountData, CompressionMethod},
         account_filter::{
-            AccountFilter, AccountFilterType, AccountFilters, MemcmpFilter, MemcmpFilterData,
+            AccountFilter, AccountFilters, AccountFilterType, MemcmpFilter, MemcmpFilterData,
         },
         account_filters_interface::AccountFiltersStoreInterface,
         account_store_interface::{AccountLoadingError, AccountStorageInterface},
@@ -491,8 +497,8 @@ mod tests {
         simple_filter_store::SimpleFilterStore,
         slot_info::SlotInfo,
     };
-    use rand::{rngs::ThreadRng, Rng};
-    use solana_sdk::{account::Account as SolanaAccount, pubkey::Pubkey, slot_history::Slot};
+
+    use crate::inmemory_account_store::InmemoryAccountStore;
 
     fn create_random_account(
         rng: &mut ThreadRng,
@@ -1927,13 +1933,13 @@ mod tests {
             store
                 .get_program_accounts(program_1, None, Commitment::Confirmed)
                 .unwrap(),
-            vec![account_3_slot5.clone(),]
+            vec![account_3_slot5.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Finalized)
                 .unwrap(),
-            vec![account_3_slot5.clone(),]
+            vec![account_3_slot5.clone()]
         );
         assert_eq!(
             store
@@ -2011,7 +2017,7 @@ mod tests {
             store
                 .get_program_accounts(program_1, None, Commitment::Finalized)
                 .unwrap(),
-            vec![account_3_slot5.clone(),]
+            vec![account_3_slot5.clone()]
         );
         assert_eq!(
             store

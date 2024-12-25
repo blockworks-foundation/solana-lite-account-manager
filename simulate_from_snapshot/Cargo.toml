@@ -7,6 +7,7 @@ edition = "2021"
 lite-account-manager-common = { workspace = true }
 lite-account-storage = { workspace = true }
 lite-token-account-storage = { workspace = true }
+lite-accounts-from-snapshot = { workspace = true}
 
 solana-sdk = {workspace = true}
 solana-client = {workspace = true}
@@ -39,6 +40,9 @@ jsonrpsee = { version = "0.20.0", features = ["macros", "full"] }
 tower = "0.4.13"
 tower-http = { version = "0.4.0", features = ["full"] }
 
+yellowstone-grpc-proto = { workspace = true }
+geyser-grpc-connector = { workspace = true }
 
 quic-geyser-client = { git = "https://github.com/blockworks-foundation/quic_geyser_plugin.git", tag = "v0.1.6_solana+2.0.15" }
 quic-geyser-common = { git = "https://github.com/blockworks-foundation/quic_geyser_plugin.git", tag = "v0.1.6_solana+2.0.15" }
+tracing-subscriber = "0.3.19"

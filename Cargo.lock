@@ -2657,7 +2657,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "lite-accounts-from-storage"
+name = "lite-accounts-from-snapshot"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -2716,11 +2716,13 @@ dependencies = [
  "clap 4.5.20",
  "env_logger",
  "futures",
+ "geyser-grpc-connector",
  "itertools 0.10.5",
  "jsonrpsee",
  "lazy_static",
  "lite-account-manager-common",
  "lite-account-storage",
+ "lite-accounts-from-snapshot",
  "lite-token-account-storage",
  "log",
  "memmap2",
@@ -2740,6 +2742,8 @@ dependencies = [
  "tokio",
  "tower 0.4.13",
  "tower-http",
+ "tracing-subscriber",
+ "yellowstone-grpc-proto",
  "zstd 0.13.2",
 ]
 

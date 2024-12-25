@@ -5,7 +5,7 @@ use std::str::FromStr;
 use solana_runtime::snapshot_archive_info::SnapshotArchiveInfoGetter;
 use solana_sdk::epoch_schedule::Slot;
 
-use lite_accounts_from_storage::{Config, HostUrl, Loader};
+use lite_accounts_from_snapshot::{Config, HostUrl, Loader};
 
 pub struct TestConsumer {}
 

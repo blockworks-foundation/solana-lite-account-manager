@@ -46,9 +46,9 @@ pub async fn latest_full_snapshot(
                 let full_slot = parts[0].parse::<u64>().unwrap();
 
                 debug!("{} has snapshot of {}", &host, full_slot);
-                if full_slot < not_before_slot {
-                    continue;
-                }
+                // if full_slot < not_before_slot {
+                //     continue;
+                // }
 
                 let hash = SnapshotHash(Hash::from_str(parts[1]).unwrap());
                 snapshots.push(LatestFullSnapshot {
@@ -85,9 +85,9 @@ pub async fn latest_incremental_snapshot(
                 let incremental_slot = parts[1].parse::<u64>().unwrap();
 
                 debug!("{} has incremental snapshot of {}", &host, incremental_slot);
-                if incremental_slot < not_before_incremental_slot {
-                    continue;
-                }
+                // if incremental_slot < not_before_incremental_slot {
+                //     continue;
+                // }
 
                 let hash = SnapshotHash(Hash::from_str(parts[2]).unwrap());
                 snapshots.push(LatestIncrementalSnapshot {

@@ -3,7 +3,7 @@ use std::fmt::Display;
 use serde::Serializer;
 use solana_sdk::commitment_config::CommitmentConfig;
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 #[repr(u8)]
 pub enum Commitment {
     Processed = 0,
@@ -19,6 +19,17 @@ impl From<CommitmentConfig> for Commitment {
             Self::Confirmed
         } else {
             Self::Processed
+        }
+    }
+}
+
+impl From<i32> for Commitment {
+    fn from(value: i32) -> Self {
+        match value {
+            0 => Commitment::Processed,
+            1 => Commitment::Confirmed,
+            2 => Commitment::Finalized,
+            _ => unreachable!()
         }
     }
 }
