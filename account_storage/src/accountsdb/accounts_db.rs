@@ -94,6 +94,7 @@ impl SlotState {
 }
 
 impl AccountsDb {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         let db = SolanaAccountsDb::new_with_config(
             vec![],
@@ -267,7 +268,7 @@ impl AccountsDb {
             account: Arc::new(Account {
                 lamports: shared_data.lamports(),
                 data: Data::Uncompressed(Vec::from(shared_data.data())),
-                owner: shared_data.owner().clone(),
+                owner: *shared_data.owner(),
                 executable: shared_data.executable(),
                 rent_epoch: shared_data.rent_epoch(),
             }),

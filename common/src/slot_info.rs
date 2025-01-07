@@ -9,7 +9,6 @@ pub struct SlotInfo {
     pub root: Slot,
 }
 
-
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub struct SlotInfoWithCommitment {
     pub info: SlotInfo,

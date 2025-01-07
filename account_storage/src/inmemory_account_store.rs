@@ -1,12 +1,12 @@
+use std::collections::BTreeMap;
+use std::sync::RwLock;
 use std::{
     collections::{BTreeSet, HashMap},
     sync::{Arc, Mutex, RwLockReadGuard},
 };
-use std::collections::BTreeMap;
-use std::sync::RwLock;
 
 use dashmap::DashMap;
-use prometheus::{IntGauge, opts, register_int_gauge};
+use prometheus::{opts, register_int_gauge, IntGauge};
 use solana_sdk::{pubkey::Pubkey, slot_history::Slot};
 
 use lite_account_manager_common::{
@@ -441,11 +441,11 @@ impl AccountStorageInterface for InmemoryAccountStore {
                     if (prev_account_data.account.owner != account_data.account.owner
                         || account_data.account.lamports == 0)
                         && self.update_owner_delete_if_necessary(
-                        &prev_account_data,
-                        &account_data,
-                        writable_account_index,
-                        commitment,
-                    )
+                            &prev_account_data,
+                            &account_data,
+                            writable_account_index,
+                            commitment,
+                        )
                     {
                         self.pubkey_to_account_index.remove(&account_data.pubkey);
                         writable_lk.delete();
@@ -483,13 +483,13 @@ mod tests {
 
     use base64::Engine;
     use itertools::Itertools;
-    use rand::{Rng, rngs::ThreadRng};
+    use rand::{rngs::ThreadRng, Rng};
     use solana_sdk::{account::Account as SolanaAccount, pubkey::Pubkey, slot_history::Slot};
 
     use lite_account_manager_common::{
         account_data::{Account, AccountData, CompressionMethod},
         account_filter::{
-            AccountFilter, AccountFilters, AccountFilterType, MemcmpFilter, MemcmpFilterData,
+            AccountFilter, AccountFilterType, AccountFilters, MemcmpFilter, MemcmpFilterData,
         },
         account_filters_interface::AccountFiltersStoreInterface,
         account_store_interface::{AccountLoadingError, AccountStorageInterface},

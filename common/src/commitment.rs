@@ -29,7 +29,7 @@ impl From<i32> for Commitment {
             0 => Commitment::Processed,
             1 => Commitment::Confirmed,
             2 => Commitment::Finalized,
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 }
