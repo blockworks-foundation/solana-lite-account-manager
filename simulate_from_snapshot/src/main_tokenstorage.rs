@@ -46,7 +46,7 @@ async fn main() {
     if let Some(quic_url) = quic_url {
         let token_storage = token_storage.clone();
         tokio::spawn(async move {
-            let (quic_client, mut reciever, _jh) =
+            let (quic_client, mut receiver, _jh) =
                 quic_geyser_client::non_blocking::client::Client::new(
                     quic_url,
                     ConnectionParameters::default(),
@@ -57,7 +57,7 @@ async fn main() {
                 .subscribe(vec![Filter::AccountsAll, Filter::Slot])
                 .await
                 .unwrap();
-            while let Some(message) = reciever.recv().await {
+            while let Some(message) = receiver.recv().await {
                 match message {
                     Message::AccountMsg(account) => {
                         let compression_method = match account.compression_type {
@@ -127,15 +127,17 @@ async fn main() {
     info!("Start importing accounts from full snapshot");
     let (mut accounts_rx, _) = import_archive(archive_path).await;
     let mut cnt = 0i32;
-    while let Some(account_data) = accounts_rx.recv().await {
-        let account = account_data.account;
+    while let Some(AccountData {
+        account, pubkey, ..
+    }) = accounts_rx.recv().await
+    {
         if account.owner != token_program {
             continue;
         }
 
         let data = account.data.clone();
         token_storage.initilize_or_update_account(AccountData {
-            pubkey: account_data.pubkey,
+            pubkey,
             account: Arc::new(Account {
                 lamports: account.lamports,
                 data,
