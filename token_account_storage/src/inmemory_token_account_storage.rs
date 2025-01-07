@@ -8,6 +8,7 @@ use itertools::Itertools;
 use lite_account_manager_common::{
     account_store_interface::AccountLoadingError, pubkey_container_utils::PartialPubkey,
 };
+use log::trace;
 use prometheus::{opts, register_int_gauge, IntGauge};
 use solana_sdk::pubkey::Pubkey;
 
@@ -58,7 +59,7 @@ impl TokenAccountStorageInterface for InmemoryTokenAccountStorage {
     }
 
     fn save_or_update(&self, token_account: TokenAccount) -> (TokenAccountIndex, bool) {
-        println!("Saving or updating token account: {:?}", token_account);
+        trace!("Saving or updating token account: {:?}", token_account);
         match self.pubkey_to_index.entry(token_account.pubkey.into()) {
             dashmap::mapref::entry::Entry::Occupied(mut occ) => {
                 // already present

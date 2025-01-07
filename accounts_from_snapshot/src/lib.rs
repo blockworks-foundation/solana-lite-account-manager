@@ -27,7 +27,7 @@ mod archived;
 mod core;
 mod download;
 mod find;
-pub(crate) mod import;
+pub mod import;
 mod solana;
 
 #[derive(Clone, Debug)]

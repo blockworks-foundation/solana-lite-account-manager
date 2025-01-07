@@ -3,6 +3,14 @@ name = "lite-accounts-simulate_from_snapshot"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "main_accountsdb"
+path = "src/main_accountsdb.rs"
+
+[[bin]]
+name = "main_tokenstorage"
+path = "src/main_tokenstorage.rs"
+
 [dependencies]
 lite-account-manager-common = { workspace = true }
 lite-account-storage = { workspace = true }

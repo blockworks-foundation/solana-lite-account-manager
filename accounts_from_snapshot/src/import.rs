@@ -8,14 +8,11 @@ use tokio::sync::mpsc::Receiver;
 use tokio::task::JoinHandle;
 
 use lite_account_manager_common::account_data::{Account, AccountData, Data};
-use lite_account_manager_common::account_store_interface::AccountStorageInterface;
 
 use crate::archived::ArchiveSnapshotExtractor;
 use crate::core::{append_vec_iter, SnapshotExtractor};
 
-pub(crate) async fn import_archive(
-    archive_path: PathBuf,
-) -> (Receiver<AccountData>, JoinHandle<()>) {
+pub async fn import_archive(archive_path: PathBuf) -> (Receiver<AccountData>, JoinHandle<()>) {
     let (tx, rx) = mpsc::channel::<AccountData>(10_000);
 
     let handle: JoinHandle<()> = tokio::task::spawn_blocking(move || {
