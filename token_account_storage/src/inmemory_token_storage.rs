@@ -572,7 +572,11 @@ impl AccountStorageInterface for TokenProgramAccountsStorage {
         ) {
             Ok(res) => res,
             Err(e) => {
-                log::error!("Token account was not able to identified {}", e);
+                log::error!(
+                    "Token account {} was not able to be identified {}",
+                    account_data.pubkey.to_string(),
+                    e
+                );
                 return false;
             }
         };
@@ -603,7 +607,7 @@ impl AccountStorageInterface for TokenProgramAccountsStorage {
             Ok(res) => res,
             Err(e) => {
                 log::error!(
-                    "Token program account {} was not able to identified {}",
+                    "Token program account {} was not able to be identified {}",
                     account_data.pubkey.to_string(),
                     e
                 );
