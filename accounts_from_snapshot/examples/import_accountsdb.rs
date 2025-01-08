@@ -64,7 +64,7 @@ pub async fn main() {
         exit_rx.resubscribe(),
     );
 
-    let first_slot_from_stream: OnceCell<Slot> = OnceCell::new();
+    let mut backfill_task_started: OnceCell<()> = OnceCell::new();
     let db = Arc::new(AccountsDb::new());
     let mut accounts_rx = account_stream(geyser_rx);
 
@@ -72,7 +72,7 @@ pub async fn main() {
         let account = accounts_rx.recv().await.unwrap();
         let slot = account.updated_slot;
 
-        if let Ok(()) = first_slot_from_stream.set(slot) {
+        if backfill_task_started.set(()).is_ok() {
             // note: need to start backfilling with slot AFTER the first slot from the stream
             start_backfill(slot + 1, db.clone());
         }
