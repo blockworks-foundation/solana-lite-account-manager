@@ -29,7 +29,7 @@ use solana_sdk::clock::Slot;
 use tokio::task;
 use tokio::task::JoinHandle;
 
-use crate::find::{find_full_snapshot, latest_full_snapshot, latest_incremental_snapshot};
+use crate::find::{find_full_snapshot, latest_incremental_snapshot};
 use crate::{Config, HostUrl};
 
 pub struct Loader {
@@ -50,7 +50,7 @@ pub struct IncrementalSnapshot {
 }
 
 impl Loader {
-    pub fn new(cfg: Config) -> Self {
+    pub const fn new(cfg: Config) -> Self {
         Self { cfg }
     }
 
@@ -174,7 +174,16 @@ pub(crate) async fn download_snapshot(
                 &mut None,
             ) {
                 Ok(()) => return Ok(destination_path),
-                Err(err) => bail!("{}", err),
+                Err(err) => {
+                    log::warn!(
+                        "Failed to download a snapshot archive: format={}, slot={}, url={}, err={}",
+                        archive_format,
+                        desired_snapshot_hash.0,
+                        host.0,
+                        err
+                    );
+                    continue;
+                }
             }
         }
 

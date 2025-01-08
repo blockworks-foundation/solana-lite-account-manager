@@ -2,35 +2,23 @@ use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::env;
 use std::num::NonZeroUsize;
-use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::atomic::AtomicU64;
-use std::sync::atomic::Ordering::Relaxed;
-use std::sync::{Arc, Once};
-use std::thread::spawn;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::Arc;
 
-use futures::executor::block_on;
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task_with_mpsc;
 use geyser_grpc_connector::{GrpcConnectionTimeouts, GrpcSourceConfig, Message};
 use log::{info, warn};
-use solana_sdk::clock::{Slot, UnixTimestamp};
+use solana_sdk::clock::Slot;
 use solana_sdk::pubkey::Pubkey;
 use tokio::sync::mpsc::Receiver;
-use tokio::task::{spawn_blocking, JoinHandle};
-use tokio::time::{sleep, Duration};
+use tokio::time::Duration;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
-use yellowstone_grpc_proto::geyser::{
-    SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeRequestFilterBlocksMeta,
-    SubscribeRequestFilterSlots,
-};
+use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeRequestFilterAccounts};
 
 use lite_account_manager_common::account_data::{Account, AccountData, Data};
 use lite_account_manager_common::account_store_interface::AccountStorageInterface;
 use lite_account_storage::accountsdb::AccountsDb;
-use lite_accounts_from_snapshot::{start_backfill_import_from_snapshot, Config, HostUrl, Loader};
-
-type AtomicSlot = Arc<AtomicU64>;
+use lite_accounts_from_snapshot::{start_backfill_import_from_snapshot, Config, HostUrl};
 
 #[tokio::main]
 pub async fn main() {
@@ -64,7 +52,7 @@ pub async fn main() {
         exit_rx.resubscribe(),
     );
 
-    let mut backfill_task_started: OnceCell<()> = OnceCell::new();
+    let backfill_task_started: OnceCell<()> = OnceCell::new();
     let db = Arc::new(AccountsDb::new());
     let mut accounts_rx = account_stream(geyser_rx);
 
@@ -74,7 +62,7 @@ pub async fn main() {
 
         if backfill_task_started.set(()).is_ok() {
             // note: need to start backfilling with slot AFTER the first slot from the stream
-            start_backfill(slot + 1, db.clone());
+            start_backfill(slot + 1, Arc::clone(&db));
         }
 
         db.initilize_or_update_account(account);
@@ -112,7 +100,7 @@ fn start_backfill(not_before_slot: Slot, db: Arc<AccountsDb>) {
         not_before_slot
     );
 
-    let _ = start_backfill_import_from_snapshot(config, db);
+    start_backfill_import_from_snapshot(config, db);
 }
 
 fn account_stream(mut geyser_messages_rx: Receiver<Message>) -> Receiver<AccountData> {
@@ -153,7 +141,7 @@ fn account_stream(mut geyser_messages_rx: Receiver<Message>) -> Receiver<Account
         }
     });
 
-    return result;
+    result
 }
 
 pub fn all_accounts() -> SubscribeRequest {

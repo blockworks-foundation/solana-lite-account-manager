@@ -1,18 +1,14 @@
 use std::env;
 use std::num::NonZeroUsize;
-use std::path::PathBuf;
 use std::str::FromStr;
 
-use solana_runtime::snapshot_archive_info::SnapshotArchiveInfoGetter;
 use solana_sdk::epoch_schedule::Slot;
 
 use lite_accounts_from_snapshot::{Config, HostUrl, Loader};
 
 #[tokio::main]
 async fn main() {
-    env_logger::init_from_env(
-        env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
-    );
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let temp_dir = env::temp_dir();
     let full_snapshot_path = temp_dir.join("full-snapshot");

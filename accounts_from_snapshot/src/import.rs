@@ -17,13 +17,12 @@ pub async fn import_archive(archive_path: PathBuf) -> (Receiver<AccountData>, Jo
 
     let handle: JoinHandle<()> = tokio::task::spawn_blocking(move || {
         let mut extractor: ArchiveSnapshotExtractor<File> =
-            ArchiveSnapshotExtractor::open(&archive_path).expect(
-                format!(
+            ArchiveSnapshotExtractor::open(&archive_path).unwrap_or_else(|_| {
+                panic!(
                     "Unable to load archive file: {}",
                     archive_path.to_str().unwrap()
                 )
-                .as_str(),
-            );
+            });
 
         for append_vec in extractor.iter() {
             let tx = tx.clone();
@@ -40,7 +39,7 @@ pub async fn import_archive(archive_path: PathBuf) -> (Receiver<AccountData>, Jo
                             account: Arc::new(Account {
                                 lamports: shared_data.lamports(),
                                 data: Data::Uncompressed(Vec::from(shared_data.data())),
-                                owner: shared_data.owner().clone(),
+                                owner: *shared_data.owner(),
                                 executable: shared_data.executable(),
                                 rent_epoch: shared_data.rent_epoch(),
                             }),

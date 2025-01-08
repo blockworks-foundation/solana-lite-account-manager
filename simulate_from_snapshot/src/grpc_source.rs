@@ -67,7 +67,7 @@ pub(crate) fn process_stream(
         }
     });
 
-    return (slots_rx, accounts_rx);
+    (slots_rx, accounts_rx)
 }
 
 pub fn all_accounts() -> SubscribeRequest {
