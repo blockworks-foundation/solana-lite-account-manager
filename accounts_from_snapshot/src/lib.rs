@@ -59,41 +59,22 @@ pub fn start_backfill_import_from_snapshot(cfg: Config, db: Arc<AccountsDb>) -> 
     tokio::spawn(async move {
         let loader = Loader::new(cfg);
 
-        let incremental_snapshot = loop {
-            match loader.load_latest_incremental_snapshot().await {
-                Ok(snapshot) => break snapshot,
-                Err(e) => {
-                    const RETRY_DELAY: Duration = Duration::from_secs(10);
-                    info!("Unable to download incremental snapshot: {} - retrying in {:?}", e.to_string(), RETRY_DELAY);
-                    sleep(RETRY_DELAY).await;
-                }
-            }
-        };
-        info!("{incremental_snapshot:#?}");
+        // TODO use code from find_and_load
 
-        let full_snapshot = loop {
-            match loader
-                .load_full_snapshot_at_slot(incremental_snapshot.full_slot)
-                .await
-            {
-                Ok(snapshot) => break snapshot,
-                Err(e) => {
-                    const RETRY_DELAY: Duration = Duration::from_secs(10);
-                    warn!("Unable to download full snapshot: {} - retrying in {:?}", e.to_string(), RETRY_DELAY);
-                    sleep(RETRY_DELAY).await;
-                }
-            }
-        };
-        info!("{full_snapshot:#?}");
+        // propagate error
+        let SnapshotArchives {
+            full_snapshot_archive_file,
+            incremental_snapshot_archive_dir
+        } =  loader.find_and_load().await.expect("Failed to find and load snapshots");
 
         info!("Start importing accounts from full snapshot");
-        let (mut accounts_rx, _) = import_archive(full_snapshot.path).await;
+        let (mut accounts_rx, _) = import_archive(full_snapshot_archive_file).await;
         while let Some(account) = accounts_rx.recv().await {
             db.initilize_or_update_account(account)
         }
 
         info!("Start importing accounts from incremental snapshot");
-        let (mut accounts_rx, _) = import_archive(incremental_snapshot.path).await;
+        let (mut accounts_rx, _) = import_archive(incremental_snapshot_archive_dir).await;
         while let Some(account) = accounts_rx.recv().await {
             db.initilize_or_update_account(account)
         }
