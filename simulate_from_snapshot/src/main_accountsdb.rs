@@ -1,25 +1,30 @@
+use std::num::NonZeroUsize;
+use std::path::PathBuf;
+use std::str::FromStr;
 use std::time::Duration;
 use std::{env, sync::Arc};
 
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task_with_mpsc;
 use geyser_grpc_connector::{GrpcConnectionTimeouts, GrpcSourceConfig};
 use log::{debug, info};
+use solana_sdk::clock::Slot;
 use tokio::sync::mpsc::Receiver;
 use tokio::task::JoinHandle;
 
+use crate::grpc_source::{all_accounts, process_stream};
 use lite_account_manager_common::slot_info::SlotInfoWithCommitment;
 use lite_account_manager_common::{
     account_data::AccountData, account_store_interface::AccountStorageInterface,
     commitment::Commitment,
 };
 use lite_account_storage::accountsdb::AccountsDb;
+use lite_accounts_from_snapshot::{start_backfill_import_from_snapshot, Config, HostUrl};
 
 use crate::rpc_server::RpcServerImpl;
-use crate::util::{all_accounts, import_snapshots, process_stream};
 
 mod cli;
+mod grpc_source;
 mod rpc_server;
-mod util;
 
 #[tokio::main(worker_threads = 2)]
 async fn main() {
@@ -68,7 +73,7 @@ async fn main() {
     };
 
     process_slot_updates(db.clone(), slots_rx);
-    import_snapshots(slot.info.slot, db.clone());
+    start_backfill(slot.info.slot, db.clone());
 
     let rpc_server = RpcServerImpl::new(db.clone());
 
@@ -101,4 +106,30 @@ fn process_account_updates(
             db.initilize_or_update_account(account);
         }
     })
+}
+
+fn start_backfill(not_before_slot: Slot, db: Arc<AccountsDb>) -> JoinHandle<()> {
+    let temp_dir = env::temp_dir();
+    let full_snapshot_path = temp_dir.join("full-snapshot");
+    let incremental_snapshot_path = temp_dir.join("incremental-snapshot");
+
+    let config = Config {
+        hosts: vec![
+            HostUrl::from_str("http://147.28.178.75:8899").unwrap(),
+            HostUrl::from_str("http://204.13.239.110:8899").unwrap(),
+            HostUrl::from_str("http://149.50.110.119:8899").unwrap(),
+            HostUrl::from_str("http://146.59.54.19:8899").unwrap(),
+            HostUrl::from_str("http://74.50.77.158:80").unwrap(),
+            HostUrl::from_str("http://149.50.104.41:8899").unwrap(),
+            HostUrl::from_str("http://205.209.109.158:8899").unwrap(),
+        ]
+        .into_boxed_slice(),
+        not_before_slot,
+        full_snapshot_path,
+        incremental_snapshot_path,
+        maximum_full_snapshot_archives_to_retain: NonZeroUsize::new(10).unwrap(),
+        maximum_incremental_snapshot_archives_to_retain: NonZeroUsize::new(10).unwrap(),
+    };
+
+    start_backfill_import_from_snapshot(config, db)
 }

@@ -105,7 +105,11 @@ fn start_backfill(not_before_slot: Slot, db: Arc<AccountsDb>) {
         maximum_incremental_snapshot_archives_to_retain: NonZeroUsize::new(10).unwrap(),
     };
 
-    info!("Starting backfill import from snapshot from {} RPC hosts for slot >= {}", config.hosts.len(), not_before_slot);
+    info!(
+        "Starting backfill import from snapshot from {} RPC hosts for slot >= {}",
+        config.hosts.len(),
+        not_before_slot
+    );
 
     let _ = start_backfill_import_from_snapshot(config, db);
 }

@@ -27,7 +27,6 @@ pub struct LatestIncrementalSnapshot {
     pub hash: SnapshotHash,
 }
 
-
 pub async fn find_full_snapshot(
     hosts: impl IntoIterator<Item = HostUrl>,
     slot: Slot,
