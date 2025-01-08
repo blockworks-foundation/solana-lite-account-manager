@@ -35,13 +35,13 @@ impl AccountStorageInterface for StorageByProgramId {
         self.default.update_account(account_data, commitment)
     }
 
-    fn initilize_or_update_account(&self, account_data: AccountData) {
+    fn initialize_or_update_account(&self, account_data: AccountData) {
         match self
             .program_id_dispatch_map
             .get(&account_data.account.owner)
         {
-            Some(val) => val.initilize_or_update_account(account_data),
-            None => self.default.initilize_or_update_account(account_data),
+            Some(val) => val.initialize_or_update_account(account_data),
+            None => self.default.initialize_or_update_account(account_data),
         }
     }
 

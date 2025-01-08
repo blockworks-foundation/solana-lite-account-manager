@@ -266,7 +266,7 @@ impl AccountStorageInterface for InmemoryAccountStore {
         updated
     }
 
-    fn initilize_or_update_account(&self, account_data: AccountData) {
+    fn initialize_or_update_account(&self, account_data: AccountData) {
         println!("{}", account_data.pubkey);
         self.update_account(account_data, Commitment::Finalized);
     }
@@ -471,7 +471,7 @@ impl AccountStorageInterface for InmemoryAccountStore {
         let accounts = bincode::deserialize::<Vec<AccountData>>(&snapshot)
             .map_err(|_| AccountLoadingError::DeserializationIssues)?;
         for account_data in accounts {
-            self.initilize_or_update_account(account_data);
+            self.initialize_or_update_account(account_data);
         }
         Ok(())
     }
@@ -590,7 +590,7 @@ mod tests {
         let pk2 = Pubkey::new_unique();
 
         let account_data_0 = create_random_account(&mut rng, 0, pk1, program);
-        store.initilize_or_update_account(account_data_0.clone());
+        store.initialize_or_update_account(account_data_0.clone());
 
         let account_data_1 = create_random_account(&mut rng, 0, pk2, program);
 
@@ -598,7 +598,7 @@ mod tests {
         pubkeys.insert(pk1);
         pubkeys.insert(pk2);
 
-        store.initilize_or_update_account(account_data_1.clone());
+        store.initialize_or_update_account(account_data_1.clone());
 
         assert_eq!(
             store.get_account(pk1, Commitment::Processed),
@@ -712,7 +712,7 @@ mod tests {
 
         let mut rng = rand::thread_rng();
 
-        store.initilize_or_update_account(create_random_account(&mut rng, 0, pk1, program));
+        store.initialize_or_update_account(create_random_account(&mut rng, 0, pk1, program));
 
         store.update_account(
             create_random_account(&mut rng, 1, pk1, program),
@@ -966,7 +966,7 @@ mod tests {
         let pk4_2 = Pubkey::new_unique();
         let pk5_1 = Pubkey::new_unique();
 
-        store.initilize_or_update_account(create_random_account_with_data(
+        store.initialize_or_update_account(create_random_account_with_data(
             &mut rng,
             1,
             pk1_1,
@@ -974,7 +974,7 @@ mod tests {
             data_1.clone(),
             CompressionMethod::Lz4(8),
         ));
-        store.initilize_or_update_account(create_random_account_with_data(
+        store.initialize_or_update_account(create_random_account_with_data(
             &mut rng,
             1,
             pk1_2,
@@ -982,7 +982,7 @@ mod tests {
             data_1.clone(),
             CompressionMethod::None,
         ));
-        store.initilize_or_update_account(create_random_account_with_data(
+        store.initialize_or_update_account(create_random_account_with_data(
             &mut rng,
             1,
             pk2_1,
@@ -990,7 +990,7 @@ mod tests {
             data_2.clone(),
             CompressionMethod::Lz4(3),
         ));
-        store.initilize_or_update_account(create_random_account_with_data(
+        store.initialize_or_update_account(create_random_account_with_data(
             &mut rng,
             1,
             pk2_2,
@@ -998,7 +998,7 @@ mod tests {
             data_2.clone(),
             CompressionMethod::None,
         ));
-        store.initilize_or_update_account(create_random_account_with_data(
+        store.initialize_or_update_account(create_random_account_with_data(
             &mut rng,
             1,
             pk3_1,
@@ -1006,7 +1006,7 @@ mod tests {
             data_3.clone(),
             CompressionMethod::Lz4(10),
         ));
-        store.initilize_or_update_account(create_random_account_with_data(
+        store.initialize_or_update_account(create_random_account_with_data(
             &mut rng,
             1,
             pk3_2,
@@ -1014,7 +1014,7 @@ mod tests {
             data_3.clone(),
             CompressionMethod::Lz4(5),
         ));
-        store.initilize_or_update_account(create_random_account_with_data(
+        store.initialize_or_update_account(create_random_account_with_data(
             &mut rng,
             1,
             pk4_1,
@@ -1022,7 +1022,7 @@ mod tests {
             data_4.clone(),
             CompressionMethod::Lz4(4),
         ));
-        store.initilize_or_update_account(create_random_account_with_data(
+        store.initialize_or_update_account(create_random_account_with_data(
             &mut rng,
             1,
             pk4_2,
@@ -1030,7 +1030,7 @@ mod tests {
             data_4.clone(),
             CompressionMethod::Lz4(2),
         ));
-        store.initilize_or_update_account(create_random_account_with_data(
+        store.initialize_or_update_account(create_random_account_with_data(
             &mut rng,
             1,
             pk5_1,
@@ -1174,7 +1174,7 @@ mod tests {
 
         // setting random account as finalized at slot 0
         let account_data_0 = create_random_account(&mut rng, 0, pk1, program);
-        store.initilize_or_update_account(account_data_0.clone());
+        store.initialize_or_update_account(account_data_0.clone());
 
         assert_eq!(
             store.get_account(pk1, Commitment::Processed),
@@ -1396,7 +1396,7 @@ mod tests {
         let account_1 = create_random_account(&mut rng, 0, pk1, program_1);
         let account_2 = create_random_account(&mut rng, 1, pk2, program_2);
         let account_3 = create_random_account(&mut rng, 1, pk3, program_3);
-        store.initilize_or_update_account(account_1.clone());
+        store.initialize_or_update_account(account_1.clone());
         store.update_account(account_2.clone(), Commitment::Processed);
         store.update_account(account_3.clone(), Commitment::Processed);
         assert_eq!(
@@ -2149,7 +2149,7 @@ mod tests {
 
         // add and test account
         let account_1 = create_random_account_with_write_version(&mut rng, 1, pk1, program_1, 1);
-        store.initilize_or_update_account(account_1.clone());
+        store.initialize_or_update_account(account_1.clone());
         assert_eq!(
             store.get_account(pk1, Commitment::Processed).unwrap(),
             Some(account_1.clone())
@@ -2336,10 +2336,10 @@ mod tests {
         let account3 = create_random_account(&mut rng, 1, pk3, program_2);
         let account4 = create_random_account(&mut rng, 1, pk4, program_2);
 
-        store.initilize_or_update_account(account1);
-        store.initilize_or_update_account(account2);
-        store.initilize_or_update_account(account3);
-        store.initilize_or_update_account(account4);
+        store.initialize_or_update_account(account1);
+        store.initialize_or_update_account(account2);
+        store.initialize_or_update_account(account3);
+        store.initialize_or_update_account(account4);
 
         let account1 = create_random_account(&mut rng, 2, pk1, program_1);
         let account2 = create_random_account(&mut rng, 2, pk2, program_1);

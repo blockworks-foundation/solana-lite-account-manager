@@ -125,11 +125,11 @@ impl AccountsDb {
 
 impl AccountStorageInterface for AccountsDb {
     fn update_account(&self, account_data: AccountData, _commitment: Commitment) -> bool {
-        self.initilize_or_update_account(account_data);
+        self.initialize_or_update_account(account_data);
         true
     }
 
-    fn initilize_or_update_account(&self, account_data: AccountData) {
+    fn initialize_or_update_account(&self, account_data: AccountData) {
         let shared_data = AccountSharedData::from(account_data.account.to_solana_account());
 
         let account_to_store = [(&account_data.pubkey, &shared_data)];
@@ -301,7 +301,7 @@ mod tests {
         let ak = Pubkey::from_str("6rRiMihF7UdJz25t5QvS7PgP9yzfubN7TBRv26ZBVAhE").unwrap();
 
         let ad = create_account_data(2, ak, pk, 1);
-        ti.initilize_or_update_account(ad);
+        ti.initialize_or_update_account(ad);
 
         ti.process_slot_data(slot_info(2), Processed);
 
@@ -336,9 +336,9 @@ mod tests {
             ti.process_slot_data(slot_info(4), Confirmed);
             ti.process_slot_data(slot_info(3), Finalized);
 
-            ti.initilize_or_update_account(create_account_data(5, ak, pk, 10));
-            ti.initilize_or_update_account(create_account_data(4, ak, pk, 20));
-            ti.initilize_or_update_account(create_account_data(3, ak, pk, 30));
+            ti.initialize_or_update_account(create_account_data(5, ak, pk, 10));
+            ti.initialize_or_update_account(create_account_data(4, ak, pk, 20));
+            ti.initialize_or_update_account(create_account_data(3, ak, pk, 30));
 
             let processed = ti.get_account(ak, Processed).unwrap().unwrap();
             assert_eq!(processed.updated_slot, 5);
@@ -360,7 +360,7 @@ mod tests {
             let pk = Pubkey::from_str("HZGMUF6kdCUK6nuc3TdNR6X5HNdGtg5HmVQ8cV2pRiHE").unwrap();
             let ak = Pubkey::from_str("6rRiMihF7UdJz25t5QvS7PgP9yzfubN7TBRv26ZBVAhE").unwrap();
 
-            ti.initilize_or_update_account(create_account_data(5, ak, pk, 10));
+            ti.initialize_or_update_account(create_account_data(5, ak, pk, 10));
 
             // Slot = Processed
             ti.process_slot_data(slot_info(5), Processed);
@@ -435,9 +435,9 @@ mod tests {
             ti.process_slot_data(slot_info(4), Confirmed);
             ti.process_slot_data(slot_info(3), Finalized);
 
-            ti.initilize_or_update_account(create_account_data(5, ak, pk, 10));
-            ti.initilize_or_update_account(create_account_data(4, ak, pk, 20));
-            ti.initilize_or_update_account(create_account_data(3, ak, pk, 30));
+            ti.initialize_or_update_account(create_account_data(5, ak, pk, 10));
+            ti.initialize_or_update_account(create_account_data(4, ak, pk, 20));
+            ti.initialize_or_update_account(create_account_data(3, ak, pk, 30));
 
             let processed = ti
                 .get_program_accounts(pk, None, Processed)
@@ -471,7 +471,7 @@ mod tests {
             let pk = Pubkey::from_str("HZGMUF6kdCUK6nuc3TdNR6X5HNdGtg5HmVQ8cV2pRiHE").unwrap();
             let ak = Pubkey::from_str("6rRiMihF7UdJz25t5QvS7PgP9yzfubN7TBRv26ZBVAhE").unwrap();
 
-            ti.initilize_or_update_account(create_account_data(5, ak, pk, 10));
+            ti.initialize_or_update_account(create_account_data(5, ak, pk, 10));
 
             // Slot = Processed
             ti.process_slot_data(slot_info(5), Processed);
@@ -549,13 +549,13 @@ mod tests {
             let ak2 = Pubkey::from_str("5VsPdDtqyFw6BmxrTZXKfnTLZy3TgzVA2MA1vZKAfddw").unwrap();
 
             ti.process_slot_data(slot_info(5), Processed);
-            ti.initilize_or_update_account(create_account_data_with_data(
+            ti.initialize_or_update_account(create_account_data_with_data(
                 5,
                 ak1,
                 pk,
                 Vec::from("abc"),
             ));
-            ti.initilize_or_update_account(create_account_data_with_data(
+            ti.initialize_or_update_account(create_account_data_with_data(
                 5,
                 ak2,
                 pk,
@@ -581,13 +581,13 @@ mod tests {
             let ak2 = Pubkey::from_str("5VsPdDtqyFw6BmxrTZXKfnTLZy3TgzVA2MA1vZKAfddw").unwrap();
 
             ti.process_slot_data(slot_info(5), Processed);
-            ti.initilize_or_update_account(create_account_data_with_data(
+            ti.initialize_or_update_account(create_account_data_with_data(
                 5,
                 ak1,
                 pk,
                 Vec::from("abc"),
             ));
-            ti.initilize_or_update_account(create_account_data_with_data(
+            ti.initialize_or_update_account(create_account_data_with_data(
                 5,
                 ak2,
                 pk,
@@ -620,13 +620,13 @@ mod tests {
             let ak2 = Pubkey::from_str("5VsPdDtqyFw6BmxrTZXKfnTLZy3TgzVA2MA1vZKAfddw").unwrap();
 
             ti.process_slot_data(slot_info(5), Processed);
-            ti.initilize_or_update_account(create_account_data_with_data(
+            ti.initialize_or_update_account(create_account_data_with_data(
                 5,
                 ak1,
                 pk,
                 Vec::from("abc"),
             ));
-            ti.initilize_or_update_account(create_account_data_with_data(
+            ti.initialize_or_update_account(create_account_data_with_data(
                 5,
                 ak2,
                 pk,
@@ -663,13 +663,13 @@ mod tests {
             let ak2 = Pubkey::from_str("5VsPdDtqyFw6BmxrTZXKfnTLZy3TgzVA2MA1vZKAfddw").unwrap();
 
             ti.process_slot_data(slot_info(5), Processed);
-            ti.initilize_or_update_account(create_account_data_with_data(
+            ti.initialize_or_update_account(create_account_data_with_data(
                 5,
                 ak1,
                 pk,
                 Vec::from("abc"),
             ));
-            ti.initilize_or_update_account(create_account_data_with_data(
+            ti.initialize_or_update_account(create_account_data_with_data(
                 5,
                 ak2,
                 pk,
@@ -779,7 +779,7 @@ mod tests {
             let result = ti.process_slot_data(slot_info(3), Processed);
             assert_eq!(result.len(), 0);
 
-            ti.initilize_or_update_account(create_account_data(3, ak, pk, 10));
+            ti.initialize_or_update_account(create_account_data(3, ak, pk, 10));
 
             let result = ti.process_slot_data(slot_info(3), Confirmed);
             assert_eq!(result.len(), 0);
@@ -795,7 +795,7 @@ mod tests {
             let pk = Pubkey::from_str("HZGMUF6kdCUK6nuc3TdNR6X5HNdGtg5HmVQ8cV2pRiHE").unwrap();
             let ak = Pubkey::from_str("6rRiMihF7UdJz25t5QvS7PgP9yzfubN7TBRv26ZBVAhE").unwrap();
 
-            ti.initilize_or_update_account(create_account_data(3, ak, pk, 10));
+            ti.initialize_or_update_account(create_account_data(3, ak, pk, 10));
             ti.process_slot_data(slot_info(3), Finalized);
 
             let result = ti.process_slot_data(slot_info(4), Finalized);

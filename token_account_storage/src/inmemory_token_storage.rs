@@ -592,7 +592,7 @@ impl AccountStorageInterface for TokenProgramAccountsStorage {
         }
     }
 
-    fn initilize_or_update_account(&self, account_data: AccountData) {
+    fn initialize_or_update_account(&self, account_data: AccountData) {
         if !self.is_token_program_account(&account_data) {
             return;
         }

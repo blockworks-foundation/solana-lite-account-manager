@@ -103,7 +103,7 @@ fn process_account_updates(
     tokio::spawn(async move {
         loop {
             let account = accounts_rx.recv().await.unwrap();
-            db.initilize_or_update_account(account);
+            db.initialize_or_update_account(account);
         }
     })
 }

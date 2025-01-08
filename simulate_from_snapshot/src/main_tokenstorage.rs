@@ -134,7 +134,7 @@ async fn main() {
         }
 
         let data = account.data.clone();
-        token_storage.initilize_or_update_account(AccountData {
+        token_storage.initialize_or_update_account(AccountData {
             pubkey,
             account: Arc::new(Account {
                 lamports: account.lamports,
