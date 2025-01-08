@@ -1,9 +1,9 @@
+use clap::Parser;
 use lite_accounts_from_snapshot::import::import_archive;
 use log::{debug, info, trace};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Instant;
-use clap::Parser;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -20,7 +20,8 @@ pub async fn main() {
         snapshot_archive_path,
     } = Args::parse();
 
-    let (mut accounts_rx, _) = import_archive(PathBuf::from_str(&snapshot_archive_path).unwrap()).await;
+    let (mut accounts_rx, _) =
+        import_archive(PathBuf::from_str(&snapshot_archive_path).unwrap()).await;
 
     let mut avg_batchsize_cummulator = 0;
     let mut loop_cnt = 0;

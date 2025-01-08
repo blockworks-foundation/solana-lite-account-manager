@@ -2,12 +2,10 @@ use std::fmt::{Display, Formatter};
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 
-use log::{info, warn};
+use log::info;
 use solana_sdk::clock::Slot;
 use tokio::task::JoinHandle;
-use tokio::time::sleep;
 
 pub use download::*;
 use lite_account_manager_common::account_store_interface::AccountStorageInterface;
@@ -21,7 +19,6 @@ use {
 };
 
 use crate::import::import_archive;
-
 mod append_vec;
 mod archived;
 mod core;

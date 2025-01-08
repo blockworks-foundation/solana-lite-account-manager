@@ -16,7 +16,7 @@ use lite_token_account_storage::{
 use quic_geyser_common::{
     filters::Filter, message::Message, types::connections_parameters::ConnectionParameters,
 };
-use solana_sdk::{commitment_config::CommitmentConfig, program_pack::Pack};
+use solana_sdk::commitment_config::CommitmentConfig;
 
 use crate::rpc_server::RpcServerImpl;
 
@@ -25,9 +25,7 @@ pub mod rpc_server;
 
 #[tokio::main(worker_threads = 2)]
 async fn main() {
-    env_logger::init_from_env(
-        env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
-    );
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let args = Args::parse();
     println!("tester args : {:?}", args);
