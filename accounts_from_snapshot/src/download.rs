@@ -80,10 +80,11 @@ impl Loader {
         })
     }
 
-    pub async fn find_and_load(&self) {
+    pub async fn find_and_load(&self) -> anyhow::Result<()> {
         
         let hosts = self.cfg.hosts.to_vec();
 
+        // TODO add max retries
         let (full_snapshot, incremental_snapshot) = loop {
             match find_latest_incremental_snapshot(hosts.clone()).await {
                 Ok(incremental_snapshot) => {
@@ -103,9 +104,40 @@ impl Loader {
                 }
             }
         };
+
         info!("{full_snapshot:#?}");
         info!("{incremental_snapshot:#?}");
 
+
+        let incremental_snapshot_path = download_snapshot(
+            incremental_snapshot.host,
+            self.cfg.full_snapshot_path.clone(),
+            self.cfg.incremental_snapshot_path.clone(),
+            (incremental_snapshot.incremental_slot
+             , incremental_snapshot.hash),
+            SnapshotKind::IncrementalSnapshot(incremental_snapshot.full_slot),
+            self.cfg.maximum_full_snapshot_archives_to_retain,
+            self.cfg.maximum_incremental_snapshot_archives_to_retain,
+        )
+            .await
+            .await??;
+
+        let full_snapshot_path = download_snapshot(
+            full_snapshot.host,
+            self.cfg.full_snapshot_path.clone(),
+            self.cfg.incremental_snapshot_path.clone(),
+            (full_snapshot.slot, full_snapshot.hash),
+            SnapshotKind::FullSnapshot,
+            self.cfg.maximum_full_snapshot_archives_to_retain,
+            self.cfg.maximum_incremental_snapshot_archives_to_retain,
+        )
+            .await
+            .await??;
+
+        info!("incremental_snapshot_path: {:?}", incremental_snapshot_path);
+        info!("full_snapshot_path: {:?}", full_snapshot_path);
+
+        Ok(())
     }
 
     pub async fn load_latest_incremental_snapshot(&self) -> anyhow::Result<IncrementalSnapshot> {
