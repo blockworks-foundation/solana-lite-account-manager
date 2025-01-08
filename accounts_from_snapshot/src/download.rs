@@ -29,7 +29,7 @@ use solana_sdk::clock::Slot;
 use tokio::task;
 use tokio::task::JoinHandle;
 
-use crate::find::{latest_full_snapshot, latest_incremental_snapshot};
+use crate::find::{find_full_snapshot, latest_full_snapshot, latest_incremental_snapshot};
 use crate::{Config, HostUrl};
 
 pub struct Loader {
@@ -54,9 +54,9 @@ impl Loader {
         Self { cfg }
     }
 
-    pub async fn load_latest_snapshot(&self) -> anyhow::Result<FullSnapshot> {
+    pub async fn load_full_snapshot_at_slot(&self, slot: Slot) -> anyhow::Result<FullSnapshot> {
         let snapshot =
-            latest_full_snapshot(self.cfg.hosts.to_vec(), self.cfg.not_before_slot).await?;
+            find_full_snapshot(self.cfg.hosts.to_vec(), slot).await?;
 
         self.ensure_paths_exists().await;
 

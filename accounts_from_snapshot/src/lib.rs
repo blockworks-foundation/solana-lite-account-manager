@@ -55,7 +55,7 @@ pub struct Config {
     pub maximum_incremental_snapshot_archives_to_retain: NonZeroUsize,
 }
 
-pub fn import(cfg: Config, db: Arc<AccountsDb>) -> JoinHandle<()> {
+pub fn start_backfill_import_from_snapshot(cfg: Config, db: Arc<AccountsDb>) -> JoinHandle<()> {
     tokio::spawn(async move {
         let loader = Loader::new(cfg);
 
@@ -71,7 +71,7 @@ pub fn import(cfg: Config, db: Arc<AccountsDb>) -> JoinHandle<()> {
         info!("{incremental_snapshot:#?}");
 
         let full_snapshot = loop {
-            match loader.load_latest_snapshot().await {
+            match loader.load_full_snapshot_at_slot(incremental_snapshot.full_slot).await {
                 Ok(snapshot) => break snapshot,
                 Err(e) => {
                     warn!("Unable to download full snapshot: {}", e.to_string());
