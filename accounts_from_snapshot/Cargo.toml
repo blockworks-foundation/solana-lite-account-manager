@@ -42,6 +42,9 @@ solana-download-utils = "2.0.15"
 yellowstone-grpc-proto = { workspace = true }
 geyser-grpc-connector = { workspace = true }
 tracing-subscriber = "0.3.19"
+regex = { version = "1.11.0", features = [] }
+lazy_static = "1.5.0"
+once_cell = "1.20.2"
 
 [lints.clippy]
 clone_on_ref_ptr = "deny"

@@ -2,6 +2,7 @@ use std::env;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::str::FromStr;
+use log::info;
 
 use solana_runtime::snapshot_archive_info::SnapshotArchiveInfoGetter;
 use solana_sdk::epoch_schedule::Slot;
