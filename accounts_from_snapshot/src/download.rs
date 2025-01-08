@@ -54,6 +54,12 @@ pub struct IncrementalSnapshot {
     pub incremental_slot: Slot,
 }
 
+#[derive(Debug)]
+pub struct SnapshotArchives {
+    pub full_snapshot_archive_file: PathBuf,
+    pub incremental_snapshot_archive_dir: PathBuf,
+}
+
 impl Loader {
     pub fn new(cfg: Config) -> Self {
         Self { cfg }
@@ -68,7 +74,7 @@ impl Loader {
 
         let path = download_snapshot(
             snapshot.host,
-            snapshot.path,
+            snapshot.url_path,
             snapshot_dir,
             SnapshotKind::FullSnapshot,
             (snapshot.slot, snapshot.hash),
@@ -82,11 +88,12 @@ impl Loader {
         })
     }
 
-    pub async fn find_and_load(&self) -> anyhow::Result<()> {
+    pub async fn find_and_load(&self) -> anyhow::Result<SnapshotArchives> {
         
         let hosts = self.cfg.hosts.to_vec();
 
-        // TODO add max retries
+        let mut retry_count = 0;
+        const RETRY_COUNT: i32 = 5;
         let (full_snapshot, incremental_snapshot) = loop {
             match find_latest_incremental_snapshot(hosts.clone()).await {
                 Ok(incremental_snapshot) => {
@@ -100,6 +107,10 @@ impl Loader {
                     break (full_snapshot, incremental_snapshot);
                 }
                 Err(e) => {
+                    if retry_count > RETRY_COUNT {
+                        bail!("Exceeded retry count to find latest incremental snapshot: {}", e.to_string());
+                    }
+                    retry_count += 1;
                     const RETRY_DELAY: Duration = Duration::from_secs(10);
                     info!("Unable to download incremental snapshot: {} - retrying in {:?}", e.to_string(), RETRY_DELAY);
                     sleep(RETRY_DELAY).await;
@@ -116,7 +127,7 @@ impl Loader {
         // TODO: download snapshots in parallel
         let incremental_snapshot_outfile = download_snapshot(
             incremental_snapshot.host,
-            incremental_snapshot.path,
+            incremental_snapshot.url_path,
             snapshot_dir.clone(),
             SnapshotKind::IncrementalSnapshot(full_snapshot.slot),
             (incremental_snapshot.incremental_slot, incremental_snapshot.hash),
@@ -126,7 +137,7 @@ impl Loader {
 
         let full_snapshot_outfile = download_snapshot(
             full_snapshot.host,
-            full_snapshot.path,
+            full_snapshot.url_path,
             snapshot_dir,
             SnapshotKind::FullSnapshot,
             (full_snapshot.slot, full_snapshot.hash),
@@ -137,18 +148,23 @@ impl Loader {
         info!("full_snapshot_path: {:?}", full_snapshot_outfile);
         info!("incremental_snapshot_path: {:?}", incremental_snapshot_outfile);
 
-        Ok(())
+        Ok(SnapshotArchives {
+            full_snapshot_archive_file: full_snapshot_outfile,
+            incremental_snapshot_archive_dir: incremental_snapshot_outfile,
+        })
     }
 
-    pub async fn load_latest_incremental_snapshot(&self) -> anyhow::Result<IncrementalSnapshot> {
+    pub async fn load_good_incremental_snapshot(&self) -> anyhow::Result<IncrementalSnapshot> {
         let latest_snapshot =
             find_latest_incremental_snapshot(self.cfg.hosts.to_vec()).await?;
 
         if self.cfg.not_before_slot > latest_snapshot.incremental_slot {
+            let diff = (self.cfg.not_before_slot - latest_snapshot.incremental_slot) as f64 * 0.4;
             bail!(
-                "Latest incremental snapshot is at slot {}, which is older than the requested not_before_slot {}",
+                "Latest incremental snapshot is at slot {}, which is older than the requested not_before_slot {}, eta in {:.0}s",
                 latest_snapshot.incremental_slot,
-                self.cfg.not_before_slot
+                self.cfg.not_before_slot,
+                diff
             );
         }
 
@@ -156,7 +172,7 @@ impl Loader {
 
         let incremental_snapshot_outfile = download_snapshot(
             latest_snapshot.host,
-            latest_snapshot.path,
+            latest_snapshot.url_path,
             snapshot_dir,
             SnapshotKind::IncrementalSnapshot(latest_snapshot.full_slot),
             (latest_snapshot.incremental_slot, latest_snapshot.hash),
