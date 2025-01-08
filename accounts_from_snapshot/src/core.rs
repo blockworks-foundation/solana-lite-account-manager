@@ -52,7 +52,7 @@ pub(crate) fn append_vec_iter(
         })
     })
     .take_while(|account| account.is_some())
-    .filter_map(|account| account)
+    .flatten()
 }
 
 pub struct StoredAccountMetaHandle<'a> {

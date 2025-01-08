@@ -3,8 +3,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, bail, Context};
 use lazy_static::lazy_static;
-use log::{debug, info, trace, warn};
-use once_cell::unsync::Lazy;
+use log::{debug, trace, warn};
 use regex::Regex;
 use reqwest::redirect::Policy;
 use reqwest::{Client, StatusCode};
@@ -174,13 +173,13 @@ pub async fn find_latest_incremental_snapshot(
         .into_iter()
         .max_by(|left, right| left.incremental_slot.cmp(&right.incremental_slot));
 
-    return match best_snapshot {
+    match best_snapshot {
         Some(snapshot) => {
             debug!("Using incremental snapshot: {:?}", snapshot);
             Ok(snapshot)
         }
         None => Err(anyhow!("Unable to find incremental snapshot from any host")),
-    };
+    }
 }
 
 pub(crate) async fn collect_redirects(

@@ -1,9 +1,6 @@
-use std::fs::{create_dir_all, File};
-use std::num::NonZeroUsize;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
-use std::{env, fs};
 
 use anyhow::bail;
 use log::{debug, error, info, trace, warn};
@@ -13,7 +10,6 @@ use solana_runtime::snapshot_package::SnapshotKind;
 use solana_runtime::snapshot_utils;
 use solana_runtime::snapshot_utils::ArchiveFormat;
 use solana_sdk::clock::Slot;
-use tempfile::{Builder, NamedTempFile, TempPath};
 use tokio::task;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
@@ -45,7 +41,7 @@ pub struct SnapshotArchives {
 }
 
 impl Loader {
-    pub fn new(cfg: Config) -> Self {
+    pub const fn new(cfg: Config) -> Self {
         Self { cfg }
     }
 
@@ -205,10 +201,10 @@ pub(crate) async fn download_snapshot(
                 Ok(()) => return Ok(destination_path),
                 Err(err) => {
                     error!(
-                        "Failed to download a snapshot archive for slot {} from {}: {}",
-                        desired_snapshot_hash.0, host.0, err
+                        "Failed to download a snapshot archive: format={}, slot={}, url={}, err={}",
+                        archive_format, desired_snapshot_hash.0, host.0, err
                     );
-                    bail!("{}", err)
+                    continue;
                 }
             }
         }

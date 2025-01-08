@@ -1,13 +1,10 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use anyhow::bail;
-use log::{error, info, trace, warn};
-use std::fs::File;
+use log::{error, trace, warn};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
-use solana_sdk::account::ReadableAccount;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Receiver;
 use tokio::task::JoinHandle;
