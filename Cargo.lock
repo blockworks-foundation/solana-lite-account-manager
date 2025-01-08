@@ -2685,6 +2685,7 @@ dependencies = [
  "solana-runtime",
  "solana-sdk",
  "tar",
+ "tempfile",
  "thiserror 2.0.7",
  "tokio",
  "tracing-subscriber",

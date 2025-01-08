@@ -33,6 +33,7 @@ sha2 = "0.10.7"
 tar = "0.4.38"
 thiserror = { workspace = true }
 zstd = "0.11.2"
+tempfile = { workspace = true }
 tokio = { workspace = true }
 
 # loader

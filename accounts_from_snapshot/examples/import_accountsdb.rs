@@ -89,7 +89,7 @@ fn start_backfill(not_before_slot: Slot, db: Arc<AccountsDb>) {
     let config = Config {
         hosts: vec![
             // testnet validator in /home/groovie on fcs-ams1
-            HostUrl::from_str("http://178.237.58.250:19899").unwrap(),
+            HostUrl::from_str("http://178.237.58.250:8899").unwrap(),
             HostUrl::from_str("http://147.28.178.75:8899").unwrap(),
             HostUrl::from_str("http://204.13.239.110:8899").unwrap(),
             HostUrl::from_str("http://149.50.110.119:8899").unwrap(),
