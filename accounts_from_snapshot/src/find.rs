@@ -19,7 +19,7 @@ use crate::HostUrl;
 pub struct FullSnapshot {
     pub host: HostUrl,
     // e.g. /snapshot-311178098-9shdweKVo16BKtuoguep81NKQ7GtDDFEKx5kCcRC9WR9.tar.zst
-    pub uri: String,
+    pub path: String,
     pub slot: Slot,
     pub hash: SnapshotHash,
 }
@@ -28,7 +28,7 @@ pub struct FullSnapshot {
 pub struct IncrementalSnapshot {
     pub host: HostUrl,
     // e.g. /incremental-snapshot-311178098-311179186-9shdweKVo16BKtuoguep81NKQ7GtDDFEKx5kCcRC9WR9.tar.zst
-    pub uri: String,
+    pub path: String,
     // full snapshot slot from which the increment bases off
     pub full_slot: Slot,
     pub incremental_slot: Slot,
@@ -69,7 +69,7 @@ pub async fn find_full_snapshot(
                 let hash = SnapshotHash(Hash::from_str(parts[1]).unwrap());
                 snapshots.push(FullSnapshot {
                     host: host.clone(),
-                    uri,
+                    path: uri,
                     slot: full_slot,
                     hash,
                 })
@@ -110,7 +110,7 @@ pub async fn __latest_full_snapshot(
                 let hash = SnapshotHash(Hash::from_str(parts[1]).unwrap());
                 snapshots.push(FullSnapshot {
                     host: host.clone(),
-                    uri,
+                    path: uri,
                     slot: full_slot,
                     hash,
                 })
@@ -157,7 +157,7 @@ pub async fn find_latest_incremental_snapshot(
                     ).unwrap());
                 snapshots.push(IncrementalSnapshot {
                     host: host.clone(),
-                    uri,
+                    path: uri,
                     full_slot,
                     incremental_slot,
                     hash,
