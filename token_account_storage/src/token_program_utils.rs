@@ -410,19 +410,19 @@ pub fn token_mint_to_solana_account(
 }
 
 pub fn token_multisig_to_solana_account(
-    multsig: &MultiSig,
+    multisig: &MultiSig,
     pubkey: Pubkey,
     updated_slot: u64,
     write_version: u64,
 ) -> AccountData {
-    let data = match multsig.program {
+    let data = match multisig.program {
         Program::TokenProgram => {
             let mut signers = [Pubkey::default(); MAX_SIGNERS];
-            signers[..multsig.signers.len()].copy_from_slice(&multsig.signers);
+            signers[..multisig.signers.len()].copy_from_slice(&multisig.signers);
             let m_acc = spl_token::state::Multisig {
-                m: multsig.m,
-                n: multsig.n,
-                is_initialized: multsig.is_initialized,
+                m: multisig.m,
+                n: multisig.n,
+                is_initialized: multisig.is_initialized,
                 signers,
             };
             let mut data = vec![0; 355];
@@ -431,11 +431,11 @@ pub fn token_multisig_to_solana_account(
         }
         Program::Token2022Program => {
             let mut signers = [Pubkey::default(); spl_token_2022::instruction::MAX_SIGNERS];
-            signers[..multsig.signers.len()].copy_from_slice(&multsig.signers);
+            signers[..multisig.signers.len()].copy_from_slice(&multisig.signers);
             let m_acc = spl_token_2022::state::Multisig {
-                m: multsig.m,
-                n: multsig.n,
-                is_initialized: multsig.is_initialized,
+                m: multisig.m,
+                n: multisig.n,
+                is_initialized: multisig.is_initialized,
                 signers,
             };
             let mut data = vec![0; 355];
@@ -444,9 +444,9 @@ pub fn token_multisig_to_solana_account(
         }
     };
     let account = Arc::new(Account {
-        lamports: multsig.lamports,
+        lamports: multisig.lamports,
         data: lite_account_manager_common::account_data::Data::Uncompressed(data),
-        owner: match multsig.program {
+        owner: match multisig.program {
             Program::TokenProgram => spl_token::id(),
             Program::Token2022Program => spl_token_2022::id(),
         },
