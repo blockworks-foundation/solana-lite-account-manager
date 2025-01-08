@@ -79,14 +79,22 @@ impl Loader {
 
     pub async fn load_latest_incremental_snapshot(&self) -> anyhow::Result<IncrementalSnapshot> {
         let snapshot =
-            latest_incremental_snapshot(self.cfg.hosts.to_vec(), self.cfg.not_before_slot).await?;
+            latest_incremental_snapshot(self.cfg.hosts.to_vec()).await?;
+
+        if self.cfg.not_before_slot > snapshot.incremental_slot {
+            bail!(
+                "Latest incremental snapshot is at slot {}, which is older than the requested not_before_slot {}",
+                snapshot.incremental_slot,
+                self.cfg.not_before_slot
+            );
+        }
 
         let path = download_snapshot(
             snapshot.host,
             self.cfg.full_snapshot_path.clone(),
             self.cfg.incremental_snapshot_path.clone(),
             (snapshot.incremental_slot, snapshot.hash),
-            SnapshotKind::IncrementalSnapshot(snapshot.full_slot),
+            SnapshotKind::IncrementalSnapshot(snapshot.base_slot),
             self.cfg.maximum_full_snapshot_archives_to_retain,
             self.cfg.maximum_incremental_snapshot_archives_to_retain,
         )
@@ -95,7 +103,7 @@ impl Loader {
 
         Ok(IncrementalSnapshot {
             path,
-            full_slot: snapshot.full_slot,
+            full_slot: snapshot.base_slot,
             incremental_slot: snapshot.incremental_slot,
         })
     }

@@ -63,8 +63,9 @@ pub fn start_backfill_import_from_snapshot(cfg: Config, db: Arc<AccountsDb>) -> 
             match loader.load_latest_incremental_snapshot().await {
                 Ok(snapshot) => break snapshot,
                 Err(e) => {
-                    warn!("Unable to download incremental snapshot: {}", e.to_string());
-                    sleep(Duration::from_secs(30)).await;
+                    const RETRY_DELAY: Duration = Duration::from_secs(10);
+                    info!("Unable to download incremental snapshot: {} - retrying in {:?}", e.to_string(), RETRY_DELAY);
+                    sleep(RETRY_DELAY).await;
                 }
             }
         };
