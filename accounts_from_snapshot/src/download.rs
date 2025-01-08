@@ -18,17 +18,18 @@ use std::{env, fs};
 use std::fs::{create_dir_all, File};
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::time::Duration;
 
 use anyhow::bail;
-use log::{debug, info, trace};
+use log::{debug, error, info, trace};
 use solana_download_utils::download_file;
 use solana_runtime::snapshot_hash::SnapshotHash;
 use solana_runtime::snapshot_package::SnapshotKind;
 use solana_runtime::snapshot_utils;
 use solana_runtime::snapshot_utils::ArchiveFormat;
 use solana_sdk::clock::Slot;
-use tempfile::{NamedTempFile, TempPath};
+use tempfile::{Builder, NamedTempFile, TempPath};
 use tokio::task;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
@@ -63,20 +64,20 @@ impl Loader {
 
         self.ensure_paths_exists().await;
 
-        let incremental_snapshot_outfile = NamedTempFile::with_prefix("incremental-snapshot").unwrap().into_temp_path().to_path_buf();
-        let full_snapshot_outfile = NamedTempFile::with_prefix("full-snapshot").unwrap().into_temp_path().to_path_buf();
+        let snapshot_dir = PathBuf::from_str("snapshots").unwrap();
 
-        download_snapshot(
+        let path = download_snapshot(
             snapshot.host,
             snapshot.uri,
-            full_snapshot_outfile.clone(),
+            snapshot_dir,
+            SnapshotKind::FullSnapshot,
             (snapshot.slot, snapshot.hash),
         )
         .await
         .await??;
 
         Ok(FullSnapshot {
-            path: full_snapshot_outfile.clone(),
+            path,
             slot: snapshot.slot,
         })
     }
@@ -107,33 +108,34 @@ impl Loader {
         };
 
 
-        // TODO replace tempfile
-        let incremental_snapshot_outfile = NamedTempFile::with_prefix("incremental-snapshot").unwrap().into_temp_path().to_path_buf();
-        let full_snapshot_outfile = NamedTempFile::with_prefix("full-snapshot").unwrap().into_temp_path().to_path_buf();
+        let snapshot_dir = PathBuf::from_str("snapshots").unwrap();
 
         info!("{full_snapshot:#?}");
         info!("{incremental_snapshot:#?}");
 
-        download_snapshot(
+        // TODO: download snapshots in parallel
+        let incremental_snapshot_outfile = download_snapshot(
             incremental_snapshot.host,
             incremental_snapshot.uri,
-            incremental_snapshot_outfile.clone(),
+            snapshot_dir.clone(),
+            SnapshotKind::IncrementalSnapshot(full_snapshot.slot),
             (incremental_snapshot.incremental_slot, incremental_snapshot.hash),
         )
             .await
             .await??;
 
-        download_snapshot(
+        let full_snapshot_outfile = download_snapshot(
             full_snapshot.host,
             full_snapshot.uri,
-            full_snapshot_outfile.clone(),
+            snapshot_dir,
+            SnapshotKind::FullSnapshot,
             (full_snapshot.slot, full_snapshot.hash),
         )
             .await
             .await??;
 
-        info!("incremental_snapshot_path: {:?}", incremental_snapshot_outfile   );
-        info!("full_snapshot_path: {:?}", incremental_snapshot_outfile);
+        info!("full_snapshot_path: {:?}", full_snapshot_outfile);
+        info!("incremental_snapshot_path: {:?}", incremental_snapshot_outfile);
 
         Ok(())
     }
@@ -150,13 +152,13 @@ impl Loader {
             );
         }
 
-        let incremental_snapshot_outfile = NamedTempFile::with_prefix("incremental-snapshot").unwrap().into_temp_path().to_path_buf();
-        let full_snapshot_outfile = NamedTempFile::with_prefix("full-snapshot").unwrap().into_temp_path().to_path_buf();
+        let snapshot_dir = PathBuf::from_str("snapshots").unwrap();
 
-        download_snapshot(
+        let incremental_snapshot_outfile = download_snapshot(
             latest_snapshot.host,
             latest_snapshot.uri,
-            incremental_snapshot_outfile.clone(),
+            snapshot_dir,
+            SnapshotKind::IncrementalSnapshot(latest_snapshot.full_slot),
             (latest_snapshot.incremental_slot, latest_snapshot.hash),
         )
         .await
@@ -185,9 +187,10 @@ impl Loader {
 pub(crate) async fn download_snapshot(
     host: HostUrl,
     uri: String,
-    snapshot_outfile: PathBuf,
+    snapshot_dir: PathBuf,
+    snapshot_kind: SnapshotKind,
     desired_snapshot_hash: (Slot, SnapshotHash),
-) -> JoinHandle<anyhow::Result<()>> {
+) -> JoinHandle<anyhow::Result<PathBuf>> {
 
     task::spawn_blocking(move || {
 
@@ -206,27 +209,27 @@ pub(crate) async fn download_snapshot(
         // fs::create_dir_all(&snapshot_archives_remote_dir).unwrap();
         //
         for archive_format in [ArchiveFormat::TarZstd] {
-        //     let destination_path = match snapshot_kind {
-        //         SnapshotKind::FullSnapshot => snapshot_utils::build_full_snapshot_archive_path(
-        //             &snapshot_archives_remote_dir,
-        //             desired_snapshot_hash.0,
-        //             &desired_snapshot_hash.1,
-        //             archive_format,
-        //         ),
-        //         SnapshotKind::IncrementalSnapshot(base_slot) => {
-        //             snapshot_utils::build_incremental_snapshot_archive_path(
-        //                 &snapshot_archives_remote_dir,
-        //                 base_slot,
-        //                 desired_snapshot_hash.0,
-        //                 &desired_snapshot_hash.1,
-        //                 archive_format,
-        //             )
-        //         }
-        //     };
-        //
-        //     if destination_path.is_file() {
-        //         return Ok(destination_path);
-        //     }
+            let destination_path = match snapshot_kind {
+                SnapshotKind::FullSnapshot => snapshot_utils::build_full_snapshot_archive_path(
+                    &snapshot_dir,
+                    desired_snapshot_hash.0,
+                    &desired_snapshot_hash.1,
+                    archive_format,
+                ),
+                SnapshotKind::IncrementalSnapshot(base_slot) => {
+                    snapshot_utils::build_incremental_snapshot_archive_path(
+                        &snapshot_dir,
+                        base_slot,
+                        desired_snapshot_hash.0,
+                        &desired_snapshot_hash.1,
+                        archive_format,
+                    )
+                }
+            };
+
+            if destination_path.is_file() {
+                return Ok(destination_path);
+            }
 
             let url = format!(
                 "{}{}",
@@ -238,17 +241,25 @@ pub(crate) async fn download_snapshot(
                 "Downloading snapshot archive for slot {} from {} to {}",
                 desired_snapshot_hash.0,
                 url,
-                snapshot_outfile.display()
+                destination_path.display()
             );
 
             match download_file(
                 &url,
-                &snapshot_outfile,
+                &destination_path,
                 false,
                 &mut None,
             ) {
-                Ok(()) => return Ok(()),
-                Err(err) => bail!("{}", err),
+                Ok(()) => return Ok(destination_path),
+                Err(err) => {
+                    error!(
+                        "Failed to download a snapshot archive for slot {} from {}: {}",
+                        desired_snapshot_hash.0,
+                        host.0,
+                        err
+                    );
+                    bail!("{}", err)
+                },
             }
         }
 
