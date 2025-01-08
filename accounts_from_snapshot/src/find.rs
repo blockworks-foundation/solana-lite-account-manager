@@ -188,8 +188,8 @@ pub(crate) async fn collect_redirects(
     path: &str,
 ) -> anyhow::Result<Vec<(HostUrl, String)>> {
     let client = Client::builder()
-        .connect_timeout(Duration::from_secs(5))
-        .timeout(Duration::from_secs(5))
+        .connect_timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(15))
         .redirect(Policy::none()) // Disable automatic redirects
         .build()
         .context("Unable to build reqwest client")?;

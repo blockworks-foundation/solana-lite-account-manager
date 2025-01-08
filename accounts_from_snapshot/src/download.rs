@@ -14,20 +14,21 @@
 
 // This file contains code vendored from https://github.com/solana-labs/solana
 
-use std::fs;
-use std::fs::create_dir_all;
+use std::{env, fs};
+use std::fs::{create_dir_all, File};
 use std::num::NonZeroUsize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::bail;
-use log::{debug, info};
+use log::{debug, info, trace};
 use solana_download_utils::download_file;
 use solana_runtime::snapshot_hash::SnapshotHash;
 use solana_runtime::snapshot_package::SnapshotKind;
 use solana_runtime::snapshot_utils;
 use solana_runtime::snapshot_utils::ArchiveFormat;
 use solana_sdk::clock::Slot;
+use tempfile::{NamedTempFile, TempPath};
 use tokio::task;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
@@ -62,20 +63,20 @@ impl Loader {
 
         self.ensure_paths_exists().await;
 
-        let path = download_snapshot(
+        let incremental_snapshot_outfile = NamedTempFile::with_prefix("incremental-snapshot").unwrap().into_temp_path().to_path_buf();
+        let full_snapshot_outfile = NamedTempFile::with_prefix("full-snapshot").unwrap().into_temp_path().to_path_buf();
+
+        download_snapshot(
             snapshot.host,
-            self.cfg.full_snapshot_path.clone(),
-            self.cfg.incremental_snapshot_path.clone(),
+            snapshot.uri,
+            full_snapshot_outfile.clone(),
             (snapshot.slot, snapshot.hash),
-            SnapshotKind::FullSnapshot,
-            self.cfg.maximum_full_snapshot_archives_to_retain,
-            self.cfg.maximum_incremental_snapshot_archives_to_retain,
         )
         .await
         .await??;
 
         Ok(FullSnapshot {
-            path,
+            path: full_snapshot_outfile.clone(),
             slot: snapshot.slot,
         })
     }
@@ -105,37 +106,34 @@ impl Loader {
             }
         };
 
+
+        // TODO replace tempfile
+        let incremental_snapshot_outfile = NamedTempFile::with_prefix("incremental-snapshot").unwrap().into_temp_path().to_path_buf();
+        let full_snapshot_outfile = NamedTempFile::with_prefix("full-snapshot").unwrap().into_temp_path().to_path_buf();
+
         info!("{full_snapshot:#?}");
         info!("{incremental_snapshot:#?}");
 
-
-        let incremental_snapshot_path = download_snapshot(
+        download_snapshot(
             incremental_snapshot.host,
-            self.cfg.full_snapshot_path.clone(),
-            self.cfg.incremental_snapshot_path.clone(),
-            (incremental_snapshot.incremental_slot
-             , incremental_snapshot.hash),
-            SnapshotKind::IncrementalSnapshot(incremental_snapshot.full_slot),
-            self.cfg.maximum_full_snapshot_archives_to_retain,
-            self.cfg.maximum_incremental_snapshot_archives_to_retain,
+            incremental_snapshot.uri,
+            incremental_snapshot_outfile.clone(),
+            (incremental_snapshot.incremental_slot, incremental_snapshot.hash),
         )
             .await
             .await??;
 
-        let full_snapshot_path = download_snapshot(
+        download_snapshot(
             full_snapshot.host,
-            self.cfg.full_snapshot_path.clone(),
-            self.cfg.incremental_snapshot_path.clone(),
+            full_snapshot.uri,
+            full_snapshot_outfile.clone(),
             (full_snapshot.slot, full_snapshot.hash),
-            SnapshotKind::FullSnapshot,
-            self.cfg.maximum_full_snapshot_archives_to_retain,
-            self.cfg.maximum_incremental_snapshot_archives_to_retain,
         )
             .await
             .await??;
 
-        info!("incremental_snapshot_path: {:?}", incremental_snapshot_path);
-        info!("full_snapshot_path: {:?}", full_snapshot_path);
+        info!("incremental_snapshot_path: {:?}", incremental_snapshot_outfile   );
+        info!("full_snapshot_path: {:?}", incremental_snapshot_outfile);
 
         Ok(())
     }
@@ -152,20 +150,20 @@ impl Loader {
             );
         }
 
-        let path = download_snapshot(
+        let incremental_snapshot_outfile = NamedTempFile::with_prefix("incremental-snapshot").unwrap().into_temp_path().to_path_buf();
+        let full_snapshot_outfile = NamedTempFile::with_prefix("full-snapshot").unwrap().into_temp_path().to_path_buf();
+
+        download_snapshot(
             latest_snapshot.host,
-            self.cfg.full_snapshot_path.clone(),
-            self.cfg.incremental_snapshot_path.clone(),
+            latest_snapshot.uri,
+            incremental_snapshot_outfile.clone(),
             (latest_snapshot.incremental_slot, latest_snapshot.hash),
-            SnapshotKind::IncrementalSnapshot(latest_snapshot.full_slot),
-            self.cfg.maximum_full_snapshot_archives_to_retain,
-            self.cfg.maximum_incremental_snapshot_archives_to_retain,
         )
         .await
         .await??;
 
         Ok(IncrementalSnapshot {
-            path,
+            path: incremental_snapshot_outfile,
             full_slot: latest_snapshot.full_slot,
             incremental_slot: latest_snapshot.incremental_slot,
         })
@@ -186,65 +184,70 @@ impl Loader {
 
 pub(crate) async fn download_snapshot(
     host: HostUrl,
-    full_snapshot_archives_dir: PathBuf,
-    incremental_snapshot_archives_dir: PathBuf,
+    uri: String,
+    snapshot_outfile: PathBuf,
     desired_snapshot_hash: (Slot, SnapshotHash),
-    snapshot_kind: SnapshotKind,
-    maximum_full_snapshot_archives_to_retain: NonZeroUsize,
-    maximum_incremental_snapshot_archives_to_retain: NonZeroUsize,
-) -> JoinHandle<anyhow::Result<PathBuf>> {
+) -> JoinHandle<anyhow::Result<()>> {
+
     task::spawn_blocking(move || {
-        let full_snapshot_archives_dir = &full_snapshot_archives_dir;
-        let incremental_snapshot_archives_dir = &incremental_snapshot_archives_dir;
 
-        snapshot_utils::purge_old_snapshot_archives(
-            full_snapshot_archives_dir,
-            incremental_snapshot_archives_dir,
-            maximum_full_snapshot_archives_to_retain,
-            maximum_incremental_snapshot_archives_to_retain,
-        );
+        // snapshot_utils::purge_old_snapshot_archives(
+        //     full_snapshot_archives_dir,
+        //     incremental_snapshot_archives_dir,
+        //     maximum_full_snapshot_archives_to_retain,
+        //     maximum_incremental_snapshot_archives_to_retain,
+        // );
 
-        let snapshot_archives_remote_dir =
-            snapshot_utils::build_snapshot_archives_remote_dir(match snapshot_kind {
-                SnapshotKind::FullSnapshot => full_snapshot_archives_dir,
-                SnapshotKind::IncrementalSnapshot(_) => incremental_snapshot_archives_dir,
-            });
-        fs::create_dir_all(&snapshot_archives_remote_dir).unwrap();
-
+        // let snapshot_archives_remote_dir =
+        //     snapshot_utils::build_snapshot_archives_remote_dir(match snapshot_kind {
+        //         SnapshotKind::FullSnapshot => full_snapshot_archives_dir,
+        //         SnapshotKind::IncrementalSnapshot(_) => incremental_snapshot_archives_dir,
+        //     });
+        // fs::create_dir_all(&snapshot_archives_remote_dir).unwrap();
+        //
         for archive_format in [ArchiveFormat::TarZstd] {
-            let destination_path = match snapshot_kind {
-                SnapshotKind::FullSnapshot => snapshot_utils::build_full_snapshot_archive_path(
-                    &snapshot_archives_remote_dir,
-                    desired_snapshot_hash.0,
-                    &desired_snapshot_hash.1,
-                    archive_format,
-                ),
-                SnapshotKind::IncrementalSnapshot(base_slot) => {
-                    snapshot_utils::build_incremental_snapshot_archive_path(
-                        &snapshot_archives_remote_dir,
-                        base_slot,
-                        desired_snapshot_hash.0,
-                        &desired_snapshot_hash.1,
-                        archive_format,
-                    )
-                }
-            };
+        //     let destination_path = match snapshot_kind {
+        //         SnapshotKind::FullSnapshot => snapshot_utils::build_full_snapshot_archive_path(
+        //             &snapshot_archives_remote_dir,
+        //             desired_snapshot_hash.0,
+        //             &desired_snapshot_hash.1,
+        //             archive_format,
+        //         ),
+        //         SnapshotKind::IncrementalSnapshot(base_slot) => {
+        //             snapshot_utils::build_incremental_snapshot_archive_path(
+        //                 &snapshot_archives_remote_dir,
+        //                 base_slot,
+        //                 desired_snapshot_hash.0,
+        //                 &desired_snapshot_hash.1,
+        //                 archive_format,
+        //             )
+        //         }
+        //     };
+        //
+        //     if destination_path.is_file() {
+        //         return Ok(destination_path);
+        //     }
 
-            if destination_path.is_file() {
-                return Ok(destination_path);
-            }
+            let url = format!(
+                "{}{}",
+                host.0,
+                uri
+            );
+
+            trace!(
+                "Downloading snapshot archive for slot {} from {} to {}",
+                desired_snapshot_hash.0,
+                url,
+                snapshot_outfile.display()
+            );
 
             match download_file(
-                &format!(
-                    "{}/{}",
-                    host.0,
-                    destination_path.file_name().unwrap().to_str().unwrap()
-                ),
-                &destination_path,
+                &url,
+                &snapshot_outfile,
                 false,
                 &mut None,
             ) {
-                Ok(()) => return Ok(destination_path),
+                Ok(()) => return Ok(()),
                 Err(err) => bail!("{}", err),
             }
         }
