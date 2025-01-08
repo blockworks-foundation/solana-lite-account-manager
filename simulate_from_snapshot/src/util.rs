@@ -18,7 +18,7 @@ use lite_account_manager_common::account_data::{Account, AccountData, Data};
 use lite_account_manager_common::commitment::Commitment;
 use lite_account_manager_common::slot_info::{SlotInfo, SlotInfoWithCommitment};
 use lite_account_storage::accountsdb::AccountsDb;
-use lite_accounts_from_snapshot::{import, Config, HostUrl};
+use lite_accounts_from_snapshot::{import, Config, HostUrl, start_backfill_import_from_snapshot};
 
 pub(crate) fn import_snapshots(slot: Slot, db: Arc<AccountsDb>) -> JoinHandle<()> {
     let config = Config {
@@ -39,7 +39,7 @@ pub(crate) fn import_snapshots(slot: Slot, db: Arc<AccountsDb>) -> JoinHandle<()
         maximum_incremental_snapshot_archives_to_retain: NonZeroUsize::new(10).unwrap(),
     };
 
-    import(config, db)
+    start_backfill_import_from_snapshot(config, db)
 }
 
 pub(crate) fn process_stream(
