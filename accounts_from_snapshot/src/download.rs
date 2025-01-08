@@ -18,8 +18,10 @@ use std::fs;
 use std::fs::create_dir_all;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use anyhow::bail;
+use log::{debug, info};
 use solana_download_utils::download_file;
 use solana_runtime::snapshot_hash::SnapshotHash;
 use solana_runtime::snapshot_package::SnapshotKind;
@@ -28,8 +30,9 @@ use solana_runtime::snapshot_utils::ArchiveFormat;
 use solana_sdk::clock::Slot;
 use tokio::task;
 use tokio::task::JoinHandle;
+use tokio::time::sleep;
 
-use crate::find::{find_full_snapshot, latest_full_snapshot, latest_incremental_snapshot};
+use crate::find::{find_full_snapshot, find_latest_incremental_snapshot};
 use crate::{Config, HostUrl};
 
 pub struct Loader {
@@ -77,24 +80,52 @@ impl Loader {
         })
     }
 
-    pub async fn load_latest_incremental_snapshot(&self) -> anyhow::Result<IncrementalSnapshot> {
-        let snapshot =
-            latest_incremental_snapshot(self.cfg.hosts.to_vec()).await?;
+    pub async fn find_and_load(&self) {
+        
+        let hosts = self.cfg.hosts.to_vec();
 
-        if self.cfg.not_before_slot > snapshot.incremental_slot {
+        let (full_snapshot, incremental_snapshot) = loop {
+            match find_latest_incremental_snapshot(hosts.clone()).await {
+                Ok(incremental_snapshot) => {
+                    debug!("Found latest incremental snapshot: {:?} - will check corresponding full snapshot", incremental_snapshot);
+
+                    let full_snapshot = find_full_snapshot([incremental_snapshot.host.clone()], incremental_snapshot.full_slot).await.unwrap();
+
+                    info!("Found full snapshot: {:?}", full_snapshot);
+                    info!("... and incremental snapshot: {:?}", incremental_snapshot);
+
+                    break (full_snapshot, incremental_snapshot);
+                }
+                Err(e) => {
+                    const RETRY_DELAY: Duration = Duration::from_secs(10);
+                    info!("Unable to download incremental snapshot: {} - retrying in {:?}", e.to_string(), RETRY_DELAY);
+                    sleep(RETRY_DELAY).await;
+                }
+            }
+        };
+        info!("{full_snapshot:#?}");
+        info!("{incremental_snapshot:#?}");
+
+    }
+
+    pub async fn load_latest_incremental_snapshot(&self) -> anyhow::Result<IncrementalSnapshot> {
+        let latest_snapshot =
+            find_latest_incremental_snapshot(self.cfg.hosts.to_vec()).await?;
+
+        if self.cfg.not_before_slot > latest_snapshot.incremental_slot {
             bail!(
                 "Latest incremental snapshot is at slot {}, which is older than the requested not_before_slot {}",
-                snapshot.incremental_slot,
+                latest_snapshot.incremental_slot,
                 self.cfg.not_before_slot
             );
         }
 
         let path = download_snapshot(
-            snapshot.host,
+            latest_snapshot.host,
             self.cfg.full_snapshot_path.clone(),
             self.cfg.incremental_snapshot_path.clone(),
-            (snapshot.incremental_slot, snapshot.hash),
-            SnapshotKind::IncrementalSnapshot(snapshot.base_slot),
+            (latest_snapshot.incremental_slot, latest_snapshot.hash),
+            SnapshotKind::IncrementalSnapshot(latest_snapshot.full_slot),
             self.cfg.maximum_full_snapshot_archives_to_retain,
             self.cfg.maximum_incremental_snapshot_archives_to_retain,
         )
@@ -103,8 +134,8 @@ impl Loader {
 
         Ok(IncrementalSnapshot {
             path,
-            full_slot: snapshot.base_slot,
-            incremental_slot: snapshot.incremental_slot,
+            full_slot: latest_snapshot.full_slot,
+            incremental_slot: latest_snapshot.incremental_slot,
         })
     }
 
