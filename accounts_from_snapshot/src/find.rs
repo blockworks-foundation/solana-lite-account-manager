@@ -1,11 +1,11 @@
 use std::str::FromStr;
 use std::time::Duration;
 
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow, bail, Context};
 use lazy_static::lazy_static;
 use log::{debug, trace, warn};
 use reqwest::redirect::Policy;
-use reqwest::Client;
+use reqwest::{Client, StatusCode};
 use solana_runtime::snapshot_hash::SnapshotHash;
 use solana_sdk::clock::Slot;
 use solana_sdk::hash::Hash;
@@ -23,10 +23,10 @@ pub struct FullSnapshot {
 }
 
 #[derive(Debug)]
-pub struct LatestIncrementalSnapshot {
+pub struct IncrementalSnapshot {
     pub host: HostUrl,
     // full snapshot slot from which the increment bases off
-    pub base_slot: Slot,
+    pub full_slot: Slot,
     pub incremental_slot: Slot,
     pub hash: SnapshotHash,
 }
@@ -36,6 +36,7 @@ lazy_static! {
     static ref REGEX_INCREMENTAL_SNAPSHOT_RESOURCE: Regex = Regex::from_str(r"/incremental-snapshot-([0-9]+)-([0-9]+)-([0-9a-zA-Z]+)\.tar\.(.+)").unwrap();
 }
 
+// find snapshot for exact slot
 pub async fn find_full_snapshot(
     hosts: impl IntoIterator<Item = HostUrl>,
     slot: Slot,
@@ -45,16 +46,18 @@ pub async fn find_full_snapshot(
     let mut snapshots = Vec::with_capacity(hosts_and_uris.len());
 
     for (host, uri) in hosts_and_uris {
+        // TODOuse REGEX
         if let Some(data) = uri
             .strip_prefix("/snapshot-")
             .and_then(|s| s.strip_suffix(".tar.zst"))
         {
+            trace!("checking full snapshot uri part: {}", uri);
             let parts: Vec<&str> = data.split('-').collect();
 
             if parts.len() == 2 {
                 let full_slot = parts[0].parse::<u64>().unwrap();
 
-                debug!("{} has snapshot of {}", &host, full_slot);
+                debug!("{} has full snapshot of {}", &host, full_slot);
                 if full_slot != slot {
                     continue;
                 }
@@ -75,7 +78,8 @@ pub async fn find_full_snapshot(
         .ok_or_else(|| anyhow!("Unable to find full snapshot at slot {}", slot))
 }
 
-pub async fn latest_full_snapshot(
+// TODO remove
+pub async fn __latest_full_snapshot(
     hosts: impl IntoIterator<Item = HostUrl>,
     not_before_slot: Slot,
 ) -> anyhow::Result<FullSnapshot> {
@@ -114,9 +118,9 @@ pub async fn latest_full_snapshot(
         .ok_or_else(|| anyhow!("Unable to find full snapshot after {}", not_before_slot))
 }
 
-pub async fn latest_incremental_snapshot(
+pub async fn find_latest_incremental_snapshot(
     hosts: impl IntoIterator<Item = HostUrl>,
-) -> anyhow::Result<LatestIncrementalSnapshot> {
+) -> anyhow::Result<IncrementalSnapshot> {
     let hosts_and_uris = collect_redirects(hosts, "incremental-snapshot.tar.bz2").await?;
 
     let mut snapshots = Vec::with_capacity(hosts_and_uris.len());
@@ -145,9 +149,9 @@ pub async fn latest_incremental_snapshot(
                         capture.get(3)
                             .expect("hash").as_str()
                     ).unwrap());
-                snapshots.push(LatestIncrementalSnapshot {
+                snapshots.push(IncrementalSnapshot {
                     host: host.clone(),
-                    base_slot: full_slot,
+                    full_slot: full_slot,
                     incremental_slot,
                     hash,
                 })
@@ -195,6 +199,10 @@ pub(crate) async fn collect_redirects(
                     .send()
                     .await
                     .context("Unable to execute request")?;
+                if response.status() != StatusCode::SEE_OTHER {
+                    // e.g. 429 Too Many Requests
+                    bail!("Unexpected status code for host <{}>: {}", host, response.status().to_string());
+                }
                 let content = response
                     .bytes()
                     .await
