@@ -20,8 +20,9 @@ async fn main() {
     let incremental_snapshot_path = temp_dir.join("incremental-snapshot-incr");
 
     let loader = Loader::new(Config {
-        hosts: Box::new([HostUrl::from_str("https://api.testnet.solana.com").unwrap()]),
-        not_before_slot: Slot::from(999666555u64),
+        // hosts: Box::new([HostUrl::from_str("https://api.testnet.solana.com").unwrap()]),
+        hosts: Box::new([HostUrl::from_str("http://localhost:8899").unwrap()]),
+        not_before_slot: Slot::from(0u64),
         full_snapshot_path,
         incremental_snapshot_path,
         maximum_full_snapshot_archives_to_retain: NonZeroUsize::new(100).unwrap(),

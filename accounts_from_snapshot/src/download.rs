@@ -68,7 +68,7 @@ impl Loader {
 
         let path = download_snapshot(
             snapshot.host,
-            snapshot.uri,
+            snapshot.path,
             snapshot_dir,
             SnapshotKind::FullSnapshot,
             (snapshot.slot, snapshot.hash),
@@ -116,7 +116,7 @@ impl Loader {
         // TODO: download snapshots in parallel
         let incremental_snapshot_outfile = download_snapshot(
             incremental_snapshot.host,
-            incremental_snapshot.uri,
+            incremental_snapshot.path,
             snapshot_dir.clone(),
             SnapshotKind::IncrementalSnapshot(full_snapshot.slot),
             (incremental_snapshot.incremental_slot, incremental_snapshot.hash),
@@ -126,7 +126,7 @@ impl Loader {
 
         let full_snapshot_outfile = download_snapshot(
             full_snapshot.host,
-            full_snapshot.uri,
+            full_snapshot.path,
             snapshot_dir,
             SnapshotKind::FullSnapshot,
             (full_snapshot.slot, full_snapshot.hash),
@@ -156,7 +156,7 @@ impl Loader {
 
         let incremental_snapshot_outfile = download_snapshot(
             latest_snapshot.host,
-            latest_snapshot.uri,
+            latest_snapshot.path,
             snapshot_dir,
             SnapshotKind::IncrementalSnapshot(latest_snapshot.full_slot),
             (latest_snapshot.incremental_slot, latest_snapshot.hash),
