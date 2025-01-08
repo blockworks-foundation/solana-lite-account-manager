@@ -18,29 +18,26 @@ jobs:
         sudo apt-get install libssl-dev openssl protobuf-compiler -y
 
     - name: Checkout code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
 
-    - name: Install Rust
-      uses: actions-rs/toolchain@v1
+    - name: Install Rust with caching using toolchain overrides
+      uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
         toolchain: stable
         override: true
+        cache: true
+        # avoid the default "-D warnings" which thrashes cache
+        rustflags: ""
 
-    - name: Cache cargo registry
-      uses: actions/cache@v2
-      with:
-        path: ~/.cargo/registry
-        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-registry-
-
-    - name: Cache cargo index
-      uses: actions/cache@v2
-      with:
-        path: ~/.cargo/git
-        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-index-
+    - name: Use compilation cache only on non-release runs
+      if: github.event_name != 'release' && github.event_name != 'workflow_dispatch'
+      uses: mozilla-actions/sccache-action@v0.0.7
+      
+    - name: Set Rust caching env vars only on non-release runs
+      if: github.event_name != 'release' && github.event_name != 'workflow_dispatch'
+      run: |
+        echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+        echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
 
     - name: Build
       run: cargo build --verbose
