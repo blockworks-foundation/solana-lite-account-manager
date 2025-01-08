@@ -90,7 +90,7 @@ impl TestRpcServer for RpcServerImpl {
         config: Option<RpcProgramAccountsConfig>,
     ) -> RpcResult<OptionalContext<Vec<RpcKeyedAccount>>> {
         let Ok(program_id) = Pubkey::from_str(&program_id_str) else {
-            return Err(jsonrpsee::types::error::ErrorCode::InternalError.into());
+            return Err(jsonrpsee::types::error::ErrorCode::InvalidParams.into());
         };
         let with_context = config
             .as_ref()
@@ -116,8 +116,11 @@ impl TestRpcServer for RpcServerImpl {
         let gpa = self
             .storage
             .get_program_accounts(program_id, account_filters, commitment)
-            .map_err(|_| jsonrpsee::types::error::ErrorCode::InternalError)?;
-
+            .map_err(|e| {
+                log::error!("get_program_accounts: {}", e);
+                jsonrpsee::types::error::ErrorCode::InternalError
+            })?;
+        log::debug!("get_program_accounts: found {} accounts", gpa.len());
         let min_context_slot = config
             .as_ref()
             .map(|c| {

@@ -13,11 +13,10 @@ use lite_token_account_storage::{
     inmemory_token_account_storage::InmemoryTokenAccountStorage,
     inmemory_token_storage::TokenProgramAccountsStorage,
 };
-use log::info;
 use quic_geyser_common::{
     filters::Filter, message::Message, types::connections_parameters::ConnectionParameters,
 };
-use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey};
+use solana_sdk::{commitment_config::CommitmentConfig, program_pack::Pack};
 
 use crate::rpc_server::RpcServerImpl;
 
@@ -121,17 +120,16 @@ async fn main() {
 
     // load accounts from snapshot
     let token_storage = token_storage.clone();
-    let token_program = Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap();
     let archive_path = PathBuf::from_str(snapshot_archive_path.as_str()).unwrap();
 
-    info!("Start importing accounts from full snapshot");
+    log::info!("Start importing accounts from full snapshot");
     let (mut accounts_rx, _) = import_archive(archive_path).await;
     let mut cnt = 0i32;
     while let Some(AccountData {
         account, pubkey, ..
     }) = accounts_rx.recv().await
     {
-        if account.owner != token_program {
+        if account.owner != spl_token::ID && account.owner != spl_token_2022::ID {
             continue;
         }
 
@@ -149,9 +147,12 @@ async fn main() {
             write_version: 0,
         });
         cnt += 1;
+        if cnt % 100000 == 0 {
+            log::info!("{} token accounts loaded", cnt);
+        }
     }
 
-    // FIXME
+    // FIXME: this also counts rejected accounts
     log::info!(
         "Storage Initialized with snapshot, {} token accounts loaded",
         cnt

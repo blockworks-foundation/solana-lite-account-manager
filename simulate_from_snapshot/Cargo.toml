@@ -24,6 +24,8 @@ solana-frozen-abi-macro = {workspace = true}
 solana-runtime = {workspace = true}
 solana-rpc-client-api = { workspace = true }
 solana-account-decoder = { workspace = true }
+spl-token = {workspace = true}
+spl-token-2022 = {workspace = true}
 
 itertools = { workspace = true }
 futures = { workspace = true }
