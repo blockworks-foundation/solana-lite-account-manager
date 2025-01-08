@@ -46,8 +46,6 @@ pub async fn import_archive(archive_path: PathBuf) -> (Receiver<AccountData>, Jo
                             cnt_append_vecs, started_at.elapsed().as_secs_f64(), cnt_append_vecs as f64 / started_at.elapsed().as_secs_f64());
                         }
 
-                        // let shared_data = account_meta.clone_account();
-
                         tx.blocking_send(AccountData {
                             pubkey: account_meta.meta.pubkey,
                             account: Arc::new(Account {

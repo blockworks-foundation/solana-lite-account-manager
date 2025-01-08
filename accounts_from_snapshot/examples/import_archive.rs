@@ -10,13 +10,14 @@ pub async fn main() {
 
     let snapshot_file = "/Users/stefan/mango/projects/accountsdb-how-it-works/snapshot-278240833-2WmWBr6Fnq9w6VVtLbhezGZHfH6L7YrPgggRqFg2ouTk.tar.zst";
 
-
-
     let (mut accounts_rx, _) = import_archive(PathBuf::from_str(snapshot_file).unwrap()).await;
 
-    let started_at = Instant::now();
+    let mut started_at = Instant::now();
     let mut cnt_append_vecs: u32 = 0;
     while let Some(account) = accounts_rx.recv().await {
+        if cnt_append_vecs == 0 {
+            started_at = Instant::now();
+        }
         cnt_append_vecs += 1;
         if cnt_append_vecs % 100_000 == 0 {
             info!("{} append vecs loaded after {:.3}s (speed {:.0}/s)",
