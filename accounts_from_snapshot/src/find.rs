@@ -177,6 +177,7 @@ pub(crate) async fn collect_redirects(
     path: &str,
 ) -> anyhow::Result<Vec<(HostUrl, String)>> {
     let client = Client::builder()
+        .connect_timeout(Duration::from_secs(5))
         .timeout(Duration::from_secs(5))
         .redirect(Policy::none()) // Disable automatic redirects
         .build()
@@ -208,8 +209,16 @@ pub(crate) async fn collect_redirects(
     let mut result = Vec::new();
 
     for task in tasks {
-        if let Ok(Ok((host, response))) = task.await {
-            result.push((host.clone(), response));
+        match task.await {
+            Ok(Ok((host, response))) => {
+                result.push((host.clone(), response));
+            }
+            Ok(Err(e)) => {
+                warn!("Error fetching from rpc: {:?}", e);
+            }
+            Err(join_error) => {
+                panic!("Error joining task: {:?}", join_error);
+            }
         }
     }
 
