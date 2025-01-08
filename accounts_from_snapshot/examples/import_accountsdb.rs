@@ -88,15 +88,20 @@ fn start_backfill(not_before_slot: Slot, db: Arc<AccountsDb>) {
 
     let config = Config {
         hosts: vec![
+            // testnet
             // testnet validator in /home/groovie on fcs-ams1
-            HostUrl::from_str("http://178.237.58.250:19899").unwrap(),
-            HostUrl::from_str("http://147.28.178.75:8899").unwrap(),
-            HostUrl::from_str("http://204.13.239.110:8899").unwrap(),
-            HostUrl::from_str("http://149.50.110.119:8899").unwrap(),
-            HostUrl::from_str("http://146.59.54.19:8899").unwrap(),
-            HostUrl::from_str("http://74.50.77.158:80").unwrap(),
-            HostUrl::from_str("http://149.50.104.41:8899").unwrap(),
-            HostUrl::from_str("http://205.209.109.158:8899").unwrap(),
+            // HostUrl::from_str("http://178.237.58.250:8899").unwrap(),
+            // HostUrl::from_str("http://147.28.178.75:8899").unwrap(),
+            // HostUrl::from_str("http://204.13.239.110:8899").unwrap(),
+            // HostUrl::from_str("http://149.50.110.119:8899").unwrap(),
+            // HostUrl::from_str("http://146.59.54.19:8899").unwrap(),
+            // HostUrl::from_str("http://74.50.77.158:80").unwrap(),
+            // HostUrl::from_str("http://149.50.104.41:8899").unwrap(),
+            // HostUrl::from_str("http://205.209.109.158:8899").unwrap(),
+            // mainnet
+            HostUrl::from_str("http://80.77.175.84:8899").unwrap(),
+            HostUrl::from_str("http://108.61.89.6:8899").unwrap(),
+            HostUrl::from_str("http://147.28.173.107:8899").unwrap(),
         ]
         .into_boxed_slice(),
         not_before_slot,
