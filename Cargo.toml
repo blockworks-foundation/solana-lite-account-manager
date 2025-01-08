@@ -19,15 +19,15 @@ repository = "https://github.com/blockworks-foundation/solana-lite-account-manag
 license = "AGPL"
 
 [workspace.dependencies]
-solana-sdk = "=2.0.16"
-solana-rpc-client = "=2.0.16"
-solana-account-decoder = "=2.0.16"
-solana-client = "=2.0.16"
-solana-program = "=2.0.16"
-solana-accounts-db = "=2.0.16"
-solana-frozen-abi-macro = "=2.0.16"
-solana-runtime = "=2.0.16"
-solana-rpc-client-api = "=2.0.16"
+solana-sdk = "~2.0.16"
+solana-rpc-client = "~2.0.16"
+solana-account-decoder = "~2.0.16"
+solana-client = "~2.0.16"
+solana-program = "~2.0.16"
+solana-accounts-db = "~2.0.16"
+solana-frozen-abi-macro = "~2.0.16"
+solana-runtime = "~2.0.16"
+solana-rpc-client-api = "~2.0.16"
 
 async-trait = "0.1.68"
 dashmap = "5.4.0"
@@ -49,7 +49,6 @@ tracing-subscriber = "0.3.16"
 bitflags = "2.6.0"
 arrayref = "0.3.7"
 
-# spl token
 spl-token = "6.0.0"
 spl-token-2022 = "5.0.2"
 

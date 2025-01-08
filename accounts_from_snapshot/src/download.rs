@@ -55,8 +55,7 @@ impl Loader {
     }
 
     pub async fn load_full_snapshot_at_slot(&self, slot: Slot) -> anyhow::Result<FullSnapshot> {
-        let snapshot =
-            find_full_snapshot(self.cfg.hosts.to_vec(), slot).await?;
+        let snapshot = find_full_snapshot(self.cfg.hosts.to_vec(), slot).await?;
 
         self.ensure_paths_exists().await;
 

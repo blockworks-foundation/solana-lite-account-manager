@@ -1,46 +1,15 @@
-use std::collections::HashMap;
-use std::num::NonZeroUsize;
-use std::path::PathBuf;
-use std::str::FromStr;
-use std::sync::Arc;
-
 use geyser_grpc_connector::Message;
-use solana_sdk::clock::Slot;
+use lite_account_manager_common::account_data::{Account, AccountData, Data};
+use lite_account_manager_common::commitment::Commitment;
+use lite_account_manager_common::slot_info::{SlotInfo, SlotInfoWithCommitment};
 use solana_sdk::pubkey::Pubkey;
+use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::mpsc::Receiver;
-use tokio::task::JoinHandle;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::{
     SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeRequestFilterSlots,
 };
-
-use lite_account_manager_common::account_data::{Account, AccountData, Data};
-use lite_account_manager_common::commitment::Commitment;
-use lite_account_manager_common::slot_info::{SlotInfo, SlotInfoWithCommitment};
-use lite_account_storage::accountsdb::AccountsDb;
-use lite_accounts_from_snapshot::{import, Config, HostUrl};
-
-pub(crate) fn import_snapshots(slot: Slot, db: Arc<AccountsDb>) -> JoinHandle<()> {
-    let config = Config {
-        hosts: vec![
-            HostUrl::from_str("http://147.28.178.75:8899").unwrap(),
-            HostUrl::from_str("http://204.13.239.110:8899").unwrap(),
-            HostUrl::from_str("http://149.50.110.119:8899").unwrap(),
-            HostUrl::from_str("http://146.59.54.19:8899").unwrap(),
-            HostUrl::from_str("http://74.50.77.158:80").unwrap(),
-            HostUrl::from_str("http://149.50.104.41:8899").unwrap(),
-            HostUrl::from_str("http://205.209.109.158:8899").unwrap(),
-        ]
-        .into_boxed_slice(),
-        not_before_slot: slot,
-        full_snapshot_path: PathBuf::from_str("/tmp/full-snapshot").unwrap(),
-        incremental_snapshot_path: PathBuf::from_str("/tmp/incremental-snapshot").unwrap(),
-        maximum_full_snapshot_archives_to_retain: NonZeroUsize::new(10).unwrap(),
-        maximum_incremental_snapshot_archives_to_retain: NonZeroUsize::new(10).unwrap(),
-    };
-
-    import(config, db)
-}
 
 pub(crate) fn process_stream(
     mut geyser_messages_rx: Receiver<Message>,

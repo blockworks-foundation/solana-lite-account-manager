@@ -280,14 +280,17 @@ impl AccountsDb {
 
 #[cfg(test)]
 mod tests {
+    use solana_sdk::clock::Slot;
     use std::str::FromStr;
+    use std::sync::Arc;
 
+    use lite_account_manager_common::account_data::{Account, AccountData, Data};
     use solana_sdk::pubkey::Pubkey;
 
     use lite_account_manager_common::account_store_interface::AccountStorageInterface;
     use lite_account_manager_common::commitment::Commitment::Processed;
+    use lite_account_manager_common::slot_info::SlotInfo;
 
-    use crate::accountsdb::accounts_db::{create_account_data, slot_info};
     use crate::accountsdb::AccountsDb;
 
     #[test]
@@ -319,7 +322,7 @@ mod tests {
             Confirmed, Finalized, Processed,
         };
 
-        use crate::accountsdb::accounts_db::{create_account_data, slot_info};
+        use crate::accountsdb::accounts_db::tests::{create_account_data, slot_info};
         use crate::accountsdb::AccountsDb;
 
         #[test]
@@ -408,6 +411,9 @@ mod tests {
 
         use solana_sdk::pubkey::Pubkey;
 
+        use crate::accountsdb::accounts_db::tests::{
+            create_account_data, create_account_data_with_data, slot_info,
+        };
         use lite_account_manager_common::account_filter::{
             AccountFilterType, MemcmpFilter, MemcmpFilterData,
         };
@@ -416,9 +422,6 @@ mod tests {
             Confirmed, Finalized, Processed,
         };
 
-        use crate::accountsdb::accounts_db::{
-            create_account_data, create_account_data_with_data, slot_info,
-        };
         use crate::accountsdb::AccountsDb;
 
         #[test]
@@ -696,12 +699,12 @@ mod tests {
 
         use solana_sdk::pubkey::Pubkey;
 
+        use crate::accountsdb::accounts_db::tests::{create_account_data, slot_info};
         use lite_account_manager_common::account_store_interface::AccountStorageInterface;
         use lite_account_manager_common::commitment::Commitment::{
             Confirmed, Finalized, Processed,
         };
 
-        use crate::accountsdb::accounts_db::{create_account_data, slot_info};
         use crate::accountsdb::AccountsDb;
 
         #[test]
@@ -799,52 +802,52 @@ mod tests {
             assert_eq!(result.len(), 0)
         }
     }
-}
 
-pub fn slot_info(slot: Slot) -> SlotInfo {
-    SlotInfo {
-        slot,
-        parent: Slot::from(1u64),
-        root: Slot::from(0u64),
+    pub fn create_account_data_with_data(
+        updated_slot: Slot,
+        ak: Pubkey,
+        program: Pubkey,
+        data: Vec<u8>,
+    ) -> AccountData {
+        AccountData {
+            pubkey: ak,
+            account: Arc::new(Account {
+                lamports: 1,
+                data: Data::Uncompressed(data),
+                owner: program,
+                executable: false,
+                rent_epoch: 0,
+            }),
+            updated_slot,
+            write_version: 0,
+        }
     }
-}
 
-pub fn create_account_data(
-    updated_slot: Slot,
-    pubkey: Pubkey,
-    program: Pubkey,
-    lamports: u64,
-) -> AccountData {
-    AccountData {
-        pubkey,
-        account: Arc::new(Account {
-            lamports,
-            data: Data::Uncompressed(Vec::from([])),
-            owner: program,
-            executable: false,
-            rent_epoch: 0,
-        }),
-        updated_slot,
-        write_version: 0,
+    pub fn slot_info(slot: Slot) -> SlotInfo {
+        SlotInfo {
+            slot,
+            parent: Slot::from(1u64),
+            root: Slot::from(0u64),
+        }
     }
-}
 
-pub fn create_account_data_with_data(
-    updated_slot: Slot,
-    ak: Pubkey,
-    program: Pubkey,
-    data: Vec<u8>,
-) -> AccountData {
-    AccountData {
-        pubkey: ak,
-        account: Arc::new(Account {
-            lamports: 1,
-            data: Data::Uncompressed(data),
-            owner: program,
-            executable: false,
-            rent_epoch: 0,
-        }),
-        updated_slot,
-        write_version: 0,
+    pub fn create_account_data(
+        updated_slot: Slot,
+        pubkey: Pubkey,
+        program: Pubkey,
+        lamports: u64,
+    ) -> AccountData {
+        AccountData {
+            pubkey,
+            account: Arc::new(Account {
+                lamports,
+                data: Data::Uncompressed(Vec::from([])),
+                owner: program,
+                executable: false,
+                rent_epoch: 0,
+            }),
+            updated_slot,
+            write_version: 0,
+        }
     }
 }
