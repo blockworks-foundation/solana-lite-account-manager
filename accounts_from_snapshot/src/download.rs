@@ -22,7 +22,7 @@ use std::time::Duration;
 use std::{env, fs};
 
 use anyhow::bail;
-use log::{debug, error, info, trace};
+use log::{debug, error, info, trace, warn};
 use solana_download_utils::download_file;
 use solana_runtime::snapshot_hash::SnapshotHash;
 use solana_runtime::snapshot_package::SnapshotKind;
@@ -65,65 +65,66 @@ impl Loader {
         Self { cfg }
     }
 
-    pub async fn load_full_snapshot_at_slot(&self, slot: Slot) -> anyhow::Result<FullSnapshot> {
-        let snapshot = find_full_snapshot(self.cfg.hosts.to_vec(), slot).await?;
-
-        self.ensure_paths_exists().await;
-
-        let snapshot_dir = PathBuf::from_str("snapshots").unwrap();
-
-        let path = download_snapshot(
-            snapshot.host,
-            snapshot.url_path,
-            snapshot_dir,
-            SnapshotKind::FullSnapshot,
-            (snapshot.slot, snapshot.hash),
-        )
-        .await
-        .await??;
-
-        Ok(FullSnapshot {
-            path,
-            slot: snapshot.slot,
-        })
-    }
-
     pub async fn find_and_load(&self) -> anyhow::Result<SnapshotArchives> {
         let hosts = self.cfg.hosts.to_vec();
 
         let mut retry_count = 0;
+        const RETRY_DELAY: Duration = Duration::from_secs(10);
         const RETRY_COUNT: i32 = 5;
-        let (full_snapshot, incremental_snapshot) = loop {
+        let (full_snapshot, incremental_snapshot) = 'retry_loop: loop {
+            if retry_count > RETRY_COUNT {
+                bail!("Exceeded retry count to find and load snapshot");
+            }
+
             match find_latest_incremental_snapshot(hosts.clone()).await {
                 Ok(incremental_snapshot) => {
-                    debug!("Found latest incremental snapshot: {:?} - will check corresponding full snapshot", incremental_snapshot);
+                    if self.cfg.not_before_slot > incremental_snapshot.incremental_slot {
+                        let diff = (self.cfg.not_before_slot - incremental_snapshot.incremental_slot) as f64 * 0.4;
+                        debug!(
+                            "Latest incremental snapshot is at slot {}, which is older than the requested not_before_slot {} - waiting (eta in {:.0}s)",
+                            incremental_snapshot.incremental_slot,
+                            self.cfg.not_before_slot,
+                            diff
+                        );
+                        retry_count += 1;
+                        sleep(RETRY_DELAY).await;
+                        continue 'retry_loop;
+                    }
 
-                    let full_snapshot = find_full_snapshot(
+                    debug!("Found latest incremental snapshot not_before_slot {}: {:?} - will check corresponding full snapshot",
+                        self.cfg.not_before_slot, incremental_snapshot);
+
+                    let full_snapshot = match find_full_snapshot(
                         [incremental_snapshot.host.clone()],
                         incremental_snapshot.full_slot,
                     )
-                    .await
-                    .unwrap();
+                        .await {
+                        Ok(full_snapshot) => full_snapshot,
+                        Err(err) => {
+                            warn!(
+                                "Unable to find full snapshot for incremental snapshot at slot {}: {} - retrying in {:?}",
+                                incremental_snapshot.full_slot,
+                                err,
+                                RETRY_DELAY
+                            );
+                            retry_count += 1;
+                            sleep(RETRY_DELAY).await;
+                            continue 'retry_loop;
+                        }
+                    };
 
                     info!("Found full snapshot: {:?}", full_snapshot);
                     info!("... and incremental snapshot: {:?}", incremental_snapshot);
 
-                    break (full_snapshot, incremental_snapshot);
+                    break 'retry_loop (full_snapshot, incremental_snapshot);
                 }
                 Err(e) => {
-                    if retry_count > RETRY_COUNT {
-                        bail!(
-                            "Exceeded retry count to find latest incremental snapshot: {}",
-                            e.to_string()
-                        );
-                    }
-                    retry_count += 1;
-                    const RETRY_DELAY: Duration = Duration::from_secs(10);
                     info!(
                         "Unable to download incremental snapshot: {} - retrying in {:?}",
                         e.to_string(),
                         RETRY_DELAY
                     );
+                    retry_count += 1;
                     sleep(RETRY_DELAY).await;
                 }
             }
@@ -167,38 +168,6 @@ impl Loader {
         Ok(SnapshotArchives {
             full_snapshot_archive_file: full_snapshot_outfile,
             incremental_snapshot_archive_dir: incremental_snapshot_outfile,
-        })
-    }
-
-    pub async fn load_good_incremental_snapshot(&self) -> anyhow::Result<IncrementalSnapshot> {
-        let latest_snapshot = find_latest_incremental_snapshot(self.cfg.hosts.to_vec()).await?;
-
-        if self.cfg.not_before_slot > latest_snapshot.incremental_slot {
-            let diff = (self.cfg.not_before_slot - latest_snapshot.incremental_slot) as f64 * 0.4;
-            bail!(
-                "Latest incremental snapshot is at slot {}, which is older than the requested not_before_slot {}, eta in {:.0}s",
-                latest_snapshot.incremental_slot,
-                self.cfg.not_before_slot,
-                diff
-            );
-        }
-
-        let snapshot_dir = PathBuf::from_str("snapshots").unwrap();
-
-        let incremental_snapshot_outfile = download_snapshot(
-            latest_snapshot.host,
-            latest_snapshot.url_path,
-            snapshot_dir,
-            SnapshotKind::IncrementalSnapshot(latest_snapshot.full_slot),
-            (latest_snapshot.incremental_slot, latest_snapshot.hash),
-        )
-        .await
-        .await??;
-
-        Ok(IncrementalSnapshot {
-            path: incremental_snapshot_outfile,
-            full_slot: latest_snapshot.full_slot,
-            incremental_slot: latest_snapshot.incremental_slot,
         })
     }
 

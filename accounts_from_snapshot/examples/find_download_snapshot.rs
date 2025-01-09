@@ -21,8 +21,7 @@ async fn main() {
 
     let loader = Loader::new(Config {
         hosts: Box::new([HostUrl::from_str("https://api.testnet.solana.com").unwrap()]),
-        // hosts: Box::new([HostUrl::from_str("http://localhost:8899").unwrap()]),
-        not_before_slot: Slot::from(0u64),
+        not_before_slot: Slot::from(9999u64),
         full_snapshot_path,
         incremental_snapshot_path,
         maximum_full_snapshot_archives_to_retain: NonZeroUsize::new(100).unwrap(),
