@@ -46,7 +46,6 @@ pub async fn main() {
             }
             debug!("account: {:?}", item);
         }
-
     }
 
     // 35

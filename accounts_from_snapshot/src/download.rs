@@ -68,7 +68,10 @@ impl Loader {
             match find_latest_incremental_snapshot(hosts.clone()).await {
                 Ok(incremental_snapshot) => {
                     if self.cfg.not_before_slot > incremental_snapshot.incremental_slot {
-                        let diff = (self.cfg.not_before_slot - incremental_snapshot.incremental_slot) as f64 * 0.4;
+                        let diff = (self.cfg.not_before_slot
+                            - incremental_snapshot.incremental_slot)
+                            as f64
+                            * 0.4;
                         debug!(
                             "Latest incremental snapshot is at slot {}, which is older than the requested not_before_slot {} - waiting (eta in {:.0}s)",
                             incremental_snapshot.incremental_slot,
@@ -87,7 +90,8 @@ impl Loader {
                         [incremental_snapshot.host.clone()],
                         incremental_snapshot.full_slot,
                     )
-                        .await {
+                    .await
+                    {
                         Ok(full_snapshot) => full_snapshot,
                         Err(err) => {
                             warn!(
@@ -155,7 +159,6 @@ impl Loader {
             incremental_snapshot_archive_dir: incremental_snapshot_outfile,
         })
     }
-
 }
 
 pub(crate) async fn download_snapshot(
