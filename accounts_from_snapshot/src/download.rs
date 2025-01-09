@@ -14,12 +14,12 @@
 
 // This file contains code vendored from https://github.com/solana-labs/solana
 
-use std::{env, fs};
 use std::fs::{create_dir_all, File};
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::Duration;
+use std::{env, fs};
 
 use anyhow::bail;
 use log::{debug, error, info, trace};
@@ -89,7 +89,6 @@ impl Loader {
     }
 
     pub async fn find_and_load(&self) -> anyhow::Result<SnapshotArchives> {
-        
         let hosts = self.cfg.hosts.to_vec();
 
         let mut retry_count = 0;
@@ -99,7 +98,12 @@ impl Loader {
                 Ok(incremental_snapshot) => {
                     debug!("Found latest incremental snapshot: {:?} - will check corresponding full snapshot", incremental_snapshot);
 
-                    let full_snapshot = find_full_snapshot([incremental_snapshot.host.clone()], incremental_snapshot.full_slot).await.unwrap();
+                    let full_snapshot = find_full_snapshot(
+                        [incremental_snapshot.host.clone()],
+                        incremental_snapshot.full_slot,
+                    )
+                    .await
+                    .unwrap();
 
                     info!("Found full snapshot: {:?}", full_snapshot);
                     info!("... and incremental snapshot: {:?}", incremental_snapshot);
@@ -108,16 +112,22 @@ impl Loader {
                 }
                 Err(e) => {
                     if retry_count > RETRY_COUNT {
-                        bail!("Exceeded retry count to find latest incremental snapshot: {}", e.to_string());
+                        bail!(
+                            "Exceeded retry count to find latest incremental snapshot: {}",
+                            e.to_string()
+                        );
                     }
                     retry_count += 1;
                     const RETRY_DELAY: Duration = Duration::from_secs(10);
-                    info!("Unable to download incremental snapshot: {} - retrying in {:?}", e.to_string(), RETRY_DELAY);
+                    info!(
+                        "Unable to download incremental snapshot: {} - retrying in {:?}",
+                        e.to_string(),
+                        RETRY_DELAY
+                    );
                     sleep(RETRY_DELAY).await;
                 }
             }
         };
-
 
         let snapshot_dir = PathBuf::from_str("snapshots").unwrap();
 
@@ -130,10 +140,13 @@ impl Loader {
             incremental_snapshot.url_path,
             snapshot_dir.clone(),
             SnapshotKind::IncrementalSnapshot(full_snapshot.slot),
-            (incremental_snapshot.incremental_slot, incremental_snapshot.hash),
+            (
+                incremental_snapshot.incremental_slot,
+                incremental_snapshot.hash,
+            ),
         )
-            .await
-            .await??;
+        .await
+        .await??;
 
         let full_snapshot_outfile = download_snapshot(
             full_snapshot.host,
@@ -142,11 +155,14 @@ impl Loader {
             SnapshotKind::FullSnapshot,
             (full_snapshot.slot, full_snapshot.hash),
         )
-            .await
-            .await??;
+        .await
+        .await??;
 
         info!("full_snapshot_path: {:?}", full_snapshot_outfile);
-        info!("incremental_snapshot_path: {:?}", incremental_snapshot_outfile);
+        info!(
+            "incremental_snapshot_path: {:?}",
+            incremental_snapshot_outfile
+        );
 
         Ok(SnapshotArchives {
             full_snapshot_archive_file: full_snapshot_outfile,
@@ -155,8 +171,7 @@ impl Loader {
     }
 
     pub async fn load_good_incremental_snapshot(&self) -> anyhow::Result<IncrementalSnapshot> {
-        let latest_snapshot =
-            find_latest_incremental_snapshot(self.cfg.hosts.to_vec()).await?;
+        let latest_snapshot = find_latest_incremental_snapshot(self.cfg.hosts.to_vec()).await?;
 
         if self.cfg.not_before_slot > latest_snapshot.incremental_slot {
             let diff = (self.cfg.not_before_slot - latest_snapshot.incremental_slot) as f64 * 0.4;
@@ -207,9 +222,7 @@ pub(crate) async fn download_snapshot(
     snapshot_kind: SnapshotKind,
     desired_snapshot_hash: (Slot, SnapshotHash),
 ) -> JoinHandle<anyhow::Result<PathBuf>> {
-
     task::spawn_blocking(move || {
-
         // snapshot_utils::purge_old_snapshot_archives(
         //     full_snapshot_archives_dir,
         //     incremental_snapshot_archives_dir,
@@ -247,11 +260,7 @@ pub(crate) async fn download_snapshot(
                 return Ok(destination_path);
             }
 
-            let url = format!(
-                "{}{}",
-                host.0,
-                uri
-            );
+            let url = format!("{}{}", host.0, uri);
 
             trace!(
                 "Downloading snapshot archive for slot {} from {} to {}",
@@ -260,22 +269,15 @@ pub(crate) async fn download_snapshot(
                 destination_path.display()
             );
 
-            match download_file(
-                &url,
-                &destination_path,
-                false,
-                &mut None,
-            ) {
+            match download_file(&url, &destination_path, false, &mut None) {
                 Ok(()) => return Ok(destination_path),
                 Err(err) => {
                     error!(
                         "Failed to download a snapshot archive for slot {} from {}: {}",
-                        desired_snapshot_hash.0,
-                        host.0,
-                        err
+                        desired_snapshot_hash.0, host.0, err
                     );
                     bail!("{}", err)
-                },
+                }
             }
         }
 

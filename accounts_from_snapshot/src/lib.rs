@@ -64,8 +64,11 @@ pub fn start_backfill_import_from_snapshot(cfg: Config, db: Arc<AccountsDb>) -> 
         // propagate error
         let SnapshotArchives {
             full_snapshot_archive_file,
-            incremental_snapshot_archive_dir
-        } =  loader.find_and_load().await.expect("Failed to find and load snapshots");
+            incremental_snapshot_archive_dir,
+        } = loader
+            .find_and_load()
+            .await
+            .expect("Failed to find and load snapshots");
 
         info!("Start importing accounts from full snapshot");
         let (mut accounts_rx, _) = import_archive(full_snapshot_archive_file).await;
