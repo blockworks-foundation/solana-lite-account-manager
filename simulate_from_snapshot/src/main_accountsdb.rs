@@ -77,10 +77,9 @@ async fn main() {
     let rpc_server = RpcServerImpl::new(db.clone(), None);
 
     info!("Storage Initialized with snapshot");
-    let jh = RpcServerImpl::start_serving(rpc_server, 10700)
+    RpcServerImpl::start_serving(rpc_server, 10700)
         .await
         .unwrap();
-    let _ = jh.await;
 }
 
 fn process_slot_updates(

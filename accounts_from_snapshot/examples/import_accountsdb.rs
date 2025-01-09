@@ -28,7 +28,7 @@ pub async fn main() {
     let grpc_x_token = env::var("GRPC_X_TOKEN").ok();
 
     info!(
-        "Using grpc source on {} ({})",
+        "Using grpc source on {} (with token: {})",
         grpc_addr,
         grpc_x_token.is_some()
     );
