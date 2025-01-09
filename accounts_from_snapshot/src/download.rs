@@ -1,19 +1,3 @@
-// Copyright 2024 Solana Foundation.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
-// This file contains code vendored from https://github.com/solana-labs/solana
-
 use std::fs::{create_dir_all, File};
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
@@ -65,6 +49,11 @@ impl Loader {
         Self { cfg }
     }
 
+    /// Reads incremental snapshot slot numbers from provided RPC hosts trying to find one that's
+    /// reasonably new. Will then start to download the corresponding full snapshot as well as the incremental snapshot found.
+    ///
+    /// note: logic is simplified; it will always and only look at incremental snapshot slot numbers and might miss a valid full snapshot (full without incremental)
+    /// i.e. F <- I <- I <- I .. F <- I <- I <- I (F slot is never considered; logic will wait for the first I)
     pub async fn find_and_load(&self) -> anyhow::Result<SnapshotArchives> {
         let hosts = self.cfg.hosts.to_vec();
 
@@ -113,14 +102,11 @@ impl Loader {
                         }
                     };
 
-                    info!("Found full snapshot: {:?}", full_snapshot);
-                    info!("... and incremental snapshot: {:?}", incremental_snapshot);
-
                     break 'retry_loop (full_snapshot, incremental_snapshot);
                 }
                 Err(e) => {
                     info!(
-                        "Unable to download incremental snapshot: {} - retrying in {:?}",
+                        "Unable to find good incremental snapshot: {} - retrying in {:?}",
                         e.to_string(),
                         RETRY_DELAY
                     );
@@ -132,10 +118,9 @@ impl Loader {
 
         let snapshot_dir = PathBuf::from_str("snapshots").unwrap();
 
-        info!("{full_snapshot:#?}");
-        info!("{incremental_snapshot:#?}");
+        info!("Found full snapshot: {:?}", full_snapshot);
+        info!("... and incremental snapshot: {:?}", incremental_snapshot);
 
-        // TODO: download snapshots in parallel
         let incremental_snapshot_outfile = download_snapshot(
             incremental_snapshot.host,
             incremental_snapshot.url_path,
@@ -159,8 +144,8 @@ impl Loader {
         .await
         .await??;
 
-        info!("full_snapshot_path: {:?}", full_snapshot_outfile);
-        info!(
+        debug!("full_snapshot_path: {:?}", full_snapshot_outfile);
+        debug!(
             "incremental_snapshot_path: {:?}",
             incremental_snapshot_outfile
         );
@@ -171,17 +156,6 @@ impl Loader {
         })
     }
 
-    async fn ensure_paths_exists(&self) {
-        let full_snapshot_path = self.cfg.full_snapshot_path.clone();
-        let incremental_snapshot_path = self.cfg.incremental_snapshot_path.clone();
-
-        let _ = tokio::spawn(async move {
-            create_dir_all(full_snapshot_path).expect("Unable to create snapshot path");
-            create_dir_all(incremental_snapshot_path)
-                .expect("Unable to create incremental snapshot path");
-        })
-        .await;
-    }
 }
 
 pub(crate) async fn download_snapshot(
@@ -192,20 +166,6 @@ pub(crate) async fn download_snapshot(
     desired_snapshot_hash: (Slot, SnapshotHash),
 ) -> JoinHandle<anyhow::Result<PathBuf>> {
     task::spawn_blocking(move || {
-        // snapshot_utils::purge_old_snapshot_archives(
-        //     full_snapshot_archives_dir,
-        //     incremental_snapshot_archives_dir,
-        //     maximum_full_snapshot_archives_to_retain,
-        //     maximum_incremental_snapshot_archives_to_retain,
-        // );
-
-        // let snapshot_archives_remote_dir =
-        //     snapshot_utils::build_snapshot_archives_remote_dir(match snapshot_kind {
-        //         SnapshotKind::FullSnapshot => full_snapshot_archives_dir,
-        //         SnapshotKind::IncrementalSnapshot(_) => incremental_snapshot_archives_dir,
-        //     });
-        // fs::create_dir_all(&snapshot_archives_remote_dir).unwrap();
-        //
         for archive_format in [ArchiveFormat::TarZstd] {
             let destination_path = match snapshot_kind {
                 SnapshotKind::FullSnapshot => snapshot_utils::build_full_snapshot_archive_path(
