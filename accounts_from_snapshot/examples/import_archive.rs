@@ -15,15 +15,15 @@ pub async fn main() {
     let mut started_at = Instant::now();
     let mut cnt_append_vecs: u32 = 0;
     let mut batch = Vec::with_capacity(64);
-    while let Some(account) = accounts_rx.recv().await {
+    while let Some(account1) = accounts_rx.recv().await {
         if cnt_append_vecs == 0 {
             started_at = Instant::now();
         }
 
         batch.clear();
-        batch.push(account);
-        'inner_drain_loop: while let Ok(item) = accounts_rx.try_recv() {
-            batch.push(item);
+        batch.push(account1);
+        'inner_drain_loop: while let Ok(account_more) = accounts_rx.try_recv() {
+            batch.push(account_more);
             if batch.len() >= batch.capacity() {
                 break 'inner_drain_loop;
             }
@@ -40,7 +40,7 @@ pub async fn main() {
                     cnt_append_vecs as f64 / started_at.elapsed().as_secs_f64()
                 );
             }
-            debug!("account: {:?}", account);
+            debug!("account: {:?}", item);
         }
     }
 }

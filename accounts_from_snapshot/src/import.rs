@@ -1,6 +1,8 @@
 use std::fs::File;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
+use log::info;
 
 use solana_sdk::account::ReadableAccount;
 use tokio::sync::mpsc;
@@ -26,38 +28,43 @@ pub async fn import_archive(archive_path: PathBuf) -> (Receiver<AccountData>, Jo
                 .as_str(),
             );
 
+        let started_at = Instant::now();
+        let mut cnt_append_vecs: u32 = 0;
+
         for append_vec in extractor.iter() {
             let tx = tx.clone();
 
-            tokio::task::spawn(async move {
-                let append_vec = append_vec.unwrap();
+            let append_vec = append_vec.unwrap();
 
-                for handle in append_vec_iter(&append_vec) {
-                    if let Some((
-                        StoredAccountMeta {
-                            meta, account_meta, ..
-                        },
-                        _offset)
-                    ) = append_vec.get_account(handle.offset) {
-                        let shared_data = account_meta.clone_account();
+            for handle in append_vec_iter(&append_vec) {
+                if let Some((StoredAccountMeta {
+                                    meta, account_meta, data, ..
+                                },
+                                _offset)
+                ) = append_vec.get_account(handle.offset) {
+                    cnt_append_vecs += 1;
+                    if cnt_append_vecs % 100_000 == 0 {
+                        info!("{} append vecs loaded after {:.3}s (speed {:.0}/s)",
+                        cnt_append_vecs, started_at.elapsed().as_secs_f64(), cnt_append_vecs as f64 / started_at.elapsed().as_secs_f64());
 
-                        tx.send(AccountData {
-                            pubkey: meta.pubkey,
-                            account: Arc::new(Account {
-                                lamports: shared_data.lamports(),
-                                data: Data::Uncompressed(Vec::from(shared_data.data())),
-                                owner: shared_data.owner().clone(),
-                                executable: shared_data.executable(),
-                                rent_epoch: shared_data.rent_epoch(),
-                            }),
-                            updated_slot: append_vec.slot(),
-                            write_version: 0,
-                        })
-                        .await
-                        .expect("Failed to send account data");
+                        info!("items in channel: {}", tx.max_capacity() - tx.capacity());
                     }
+
+                    tx.blocking_send(AccountData {
+                        pubkey: meta.pubkey,
+                        account: Arc::new(Account {
+                            lamports: account_meta.lamports,
+                            data: Data::Uncompressed(Vec::from(data)),
+                            owner: account_meta.owner.clone(),
+                            executable: account_meta.executable,
+                            rent_epoch: account_meta.rent_epoch,
+                        }),
+                        updated_slot: append_vec.slot(),
+                        write_version: 0,
+                    })
+                    .expect("Failed to send account data");
                 }
-            });
+            }
         }
     });
 
