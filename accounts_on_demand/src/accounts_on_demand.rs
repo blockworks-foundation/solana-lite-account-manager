@@ -57,9 +57,9 @@ impl AccountStorageInterface for AccountsOnDemand {
             .update_account(account_data, commitment)
     }
 
-    fn initilize_or_update_account(&self, account_data: AccountData) {
+    fn initialize_or_update_account(&self, account_data: AccountData) {
         self.accounts_storage
-            .initilize_or_update_account(account_data)
+            .initialize_or_update_account(account_data)
     }
 
     fn get_account(

@@ -42,9 +42,9 @@ pub fn test_gpa_token_account() {
         utils::create_token_account_data(token_acc_1_2, token_acc_1_2_params, 0, 0);
     let token_acc_1_3_account =
         utils::create_token_account_data(token_acc_1_3, token_acc_1_3_params, 0, 0);
-    token_store.initilize_or_update_account(token_acc_1_1_account.clone());
-    token_store.initilize_or_update_account(token_acc_1_2_account.clone());
-    token_store.initilize_or_update_account(token_acc_1_3_account.clone());
+    token_store.initialize_or_update_account(token_acc_1_1_account.clone());
+    token_store.initialize_or_update_account(token_acc_1_2_account.clone());
+    token_store.initialize_or_update_account(token_acc_1_3_account.clone());
 
     let token_acc_2_1 = Pubkey::new_unique();
     let token_acc_2_2 = Pubkey::new_unique();
@@ -54,8 +54,8 @@ pub fn test_gpa_token_account() {
         utils::create_token_account_data(token_acc_2_1, token_acc_2_1_params, 0, 0);
     let token_acc_2_2_account =
         utils::create_token_account_data(token_acc_2_2, token_acc_2_2_params, 0, 0);
-    token_store.initilize_or_update_account(token_acc_2_1_account.clone());
-    token_store.initilize_or_update_account(token_acc_2_2_account.clone());
+    token_store.initialize_or_update_account(token_acc_2_1_account.clone());
+    token_store.initialize_or_update_account(token_acc_2_2_account.clone());
 
     let token_acc_3_1 = Pubkey::new_unique();
     let token_acc_3_2 = Pubkey::new_unique();
@@ -77,14 +77,14 @@ pub fn test_gpa_token_account() {
         utils::create_token_account_data(token_acc_3_4, token_acc_3_4_params, 0, 0);
     let token_acc_3_5_account =
         utils::create_token_account_data(token_acc_3_5, token_acc_3_5_params, 0, 0);
-    token_store.initilize_or_update_account(token_acc_3_1_account.clone());
-    token_store.initilize_or_update_account(token_acc_3_2_account.clone());
-    token_store.initilize_or_update_account(token_acc_3_3_account.clone());
-    token_store.initilize_or_update_account(token_acc_3_4_account.clone());
-    token_store.initilize_or_update_account(token_acc_3_5_account.clone());
+    token_store.initialize_or_update_account(token_acc_3_1_account.clone());
+    token_store.initialize_or_update_account(token_acc_3_2_account.clone());
+    token_store.initialize_or_update_account(token_acc_3_3_account.clone());
+    token_store.initialize_or_update_account(token_acc_3_4_account.clone());
+    token_store.initialize_or_update_account(token_acc_3_5_account.clone());
 
-    token_store.initilize_or_update_account(mint_account_1.clone());
-    token_store.initilize_or_update_account(mint_account_2.clone());
+    token_store.initialize_or_update_account(mint_account_1.clone());
+    token_store.initialize_or_update_account(mint_account_2.clone());
 
     let token_acc_owner_1 = token_store
         .get_program_accounts(

@@ -30,8 +30,8 @@ pub fn test_saving_and_loading_token_account() {
     let token_account_data =
         utils::create_token_account_data(token_account_pk, token_account_params, 2, 2);
 
-    token_store.initilize_or_update_account(mint_account);
-    token_store.initilize_or_update_account(token_account_data);
+    token_store.initialize_or_update_account(mint_account);
+    token_store.initialize_or_update_account(token_account_data);
 
     assert_eq!(
         utils::parse_account_data_to_token_params(

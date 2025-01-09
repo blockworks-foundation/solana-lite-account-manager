@@ -77,7 +77,7 @@ pub async fn main() {
             start_backfill(slot + 1, db.clone());
         }
 
-        db.initilize_or_update_account(account);
+        db.initialize_or_update_account(account);
     }
 }
 

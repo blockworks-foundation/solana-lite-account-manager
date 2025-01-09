@@ -70,13 +70,13 @@ pub fn start_backfill_import_from_snapshot(cfg: Config, db: Arc<AccountsDb>) -> 
         info!("Start importing accounts from full snapshot");
         let (mut accounts_rx, _) = import_archive(full_snapshot_archive_file).await;
         while let Some(account) = accounts_rx.recv().await {
-            db.initilize_or_update_account(account)
+            db.initialize_or_update_account(account)
         }
 
         info!("Start importing accounts from incremental snapshot");
         let (mut accounts_rx, _) = import_archive(incremental_snapshot_archive_dir).await;
         while let Some(account) = accounts_rx.recv().await {
-            db.initilize_or_update_account(account)
+            db.initialize_or_update_account(account)
         }
 
         info!("Finished importing accounts from snapshots")
