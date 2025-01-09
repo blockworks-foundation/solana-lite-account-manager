@@ -4,14 +4,14 @@ use std::time::Duration;
 use anyhow::{anyhow, bail, Context};
 use lazy_static::lazy_static;
 use log::{debug, info, trace, warn};
+use once_cell::unsync::Lazy;
+use regex::Regex;
 use reqwest::redirect::Policy;
 use reqwest::{Client, StatusCode};
 use solana_runtime::snapshot_hash::SnapshotHash;
 use solana_sdk::clock::Slot;
 use solana_sdk::hash::Hash;
 use tokio::task;
-use regex::Regex;
-use once_cell::unsync::Lazy;
 
 use crate::HostUrl;
 
@@ -135,26 +135,28 @@ pub async fn find_latest_incremental_snapshot(
         // e.g. /incremental-snapshot-311178098-311179186-9shdweKVo16BKtuoguep81NKQ7GtDDFEKx5kCcRC9WR9.tar.zst
 
         if let Some(capture) = REGEX_INCREMENTAL_SNAPSHOT_RESOURCE.captures(&uri) {
-
             if capture.len() != 5 {
                 warn!("Invalid incremental snapshot filename: {:?}", &capture);
                 continue;
             } else {
-                let full_slot = capture.get(1)
-                    .expect("full slot").as_str()
-                    .parse::<u64>().unwrap();
-                let incremental_slot = capture.get(2)
-                    .expect("incremental slot").as_str()
-                    .parse::<u64>().unwrap();
+                let full_slot = capture
+                    .get(1)
+                    .expect("full slot")
+                    .as_str()
+                    .parse::<u64>()
+                    .unwrap();
+                let incremental_slot = capture
+                    .get(2)
+                    .expect("incremental slot")
+                    .as_str()
+                    .parse::<u64>()
+                    .unwrap();
 
                 debug!("{} has incremental snapshot of {}", &host, incremental_slot);
 
                 // base58 coded hash
-                let hash = SnapshotHash(
-                    Hash::from_str(
-                        capture.get(3)
-                            .expect("hash").as_str()
-                    ).unwrap());
+                let hash =
+                    SnapshotHash(Hash::from_str(capture.get(3).expect("hash").as_str()).unwrap());
                 snapshots.push(IncrementalSnapshot {
                     host: host.clone(),
                     url_path: uri,
@@ -168,8 +170,8 @@ pub async fn find_latest_incremental_snapshot(
         }
     }
 
-    let best_snapshot =
-        snapshots.into_iter()
+    let best_snapshot = snapshots
+        .into_iter()
         .max_by(|left, right| left.incremental_slot.cmp(&right.incremental_slot));
 
     return match best_snapshot {
@@ -177,10 +179,8 @@ pub async fn find_latest_incremental_snapshot(
             debug!("Using incremental snapshot: {:?}", snapshot);
             Ok(snapshot)
         }
-        None => {
-            Err(anyhow!("Unable to find incremental snapshot from any host"))
-        }
-    }
+        None => Err(anyhow!("Unable to find incremental snapshot from any host")),
+    };
 }
 
 pub(crate) async fn collect_redirects(
@@ -208,7 +208,11 @@ pub(crate) async fn collect_redirects(
                     .context("Unable to execute request")?;
                 if response.status() != StatusCode::SEE_OTHER {
                     // e.g. 429 Too Many Requests
-                    bail!("Unexpected status code for host <{}>: {}", host, response.status().to_string());
+                    bail!(
+                        "Unexpected status code for host <{}>: {}",
+                        host,
+                        response.status().to_string()
+                    );
                 }
                 let content = response
                     .bytes()
@@ -246,6 +250,9 @@ fn test_resource_regex() {
     let capture = REGEX_INCREMENTAL_SNAPSHOT_RESOURCE.captures(str).unwrap();
     assert_eq!(capture.get(1).unwrap().as_str(), "311178098");
     assert_eq!(capture.get(2).unwrap().as_str(), "311181414");
-    assert_eq!(capture.get(3).unwrap().as_str(), "BJWKnTQDPKDHuPQPrWdQrix3VEqShnotGRLmGpN9pPuq");
+    assert_eq!(
+        capture.get(3).unwrap().as_str(),
+        "BJWKnTQDPKDHuPQPrWdQrix3VEqShnotGRLmGpN9pPuq"
+    );
     assert_eq!(capture.get(4).unwrap().as_str(), "zst");
 }

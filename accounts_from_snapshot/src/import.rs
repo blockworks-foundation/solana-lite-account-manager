@@ -8,6 +8,7 @@ use tokio::sync::mpsc::Receiver;
 use tokio::task::JoinHandle;
 
 use lite_account_manager_common::account_data::{Account, AccountData, Data};
+use crate::append_vec::StoredAccountMeta;
 
 use crate::archived::ArchiveSnapshotExtractor;
 use crate::core::{append_vec_iter, SnapshotExtractor};
@@ -32,11 +33,16 @@ pub async fn import_archive(archive_path: PathBuf) -> (Receiver<AccountData>, Jo
                 let append_vec = append_vec.unwrap();
 
                 for handle in append_vec_iter(&append_vec) {
-                    if let Some((account_meta, _offset)) = append_vec.get_account(handle.offset) {
+                    if let Some((
+                        StoredAccountMeta {
+                            meta, account_meta, ..
+                        },
+                        _offset)
+                    ) = append_vec.get_account(handle.offset) {
                         let shared_data = account_meta.clone_account();
 
                         tx.send(AccountData {
-                            pubkey: account_meta.meta.pubkey,
+                            pubkey: meta.pubkey,
                             account: Arc::new(Account {
                                 lamports: shared_data.lamports(),
                                 data: Data::Uncompressed(Vec::from(shared_data.data())),
