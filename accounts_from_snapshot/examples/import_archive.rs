@@ -3,14 +3,24 @@ use log::{debug, info, trace};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Instant;
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+pub struct Args {
+    #[arg(long)]
+    pub snapshot_archive_path: String,
+}
 
 #[tokio::main]
 pub async fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    let snapshot_file = "/Users/stefan/mango/projects/accountsdb-how-it-works/snapshot-278240833-2WmWBr6Fnq9w6VVtLbhezGZHfH6L7YrPgggRqFg2ouTk.tar.zst";
+    let Args {
+        snapshot_archive_path,
+    } = Args::parse();
 
-    let (mut accounts_rx, _) = import_archive(PathBuf::from_str(snapshot_file).unwrap()).await;
+    let (mut accounts_rx, _) = import_archive(PathBuf::from_str(&snapshot_archive_path).unwrap()).await;
 
     let mut avg_batchsize_cummulator = 0;
     let mut loop_cnt = 0;
