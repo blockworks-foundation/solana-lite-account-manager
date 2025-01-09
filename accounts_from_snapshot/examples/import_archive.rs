@@ -12,10 +12,13 @@ pub async fn main() {
 
     let (mut accounts_rx, _) = import_archive(PathBuf::from_str(snapshot_file).unwrap()).await;
 
+    let mut avg_batchsize_cummulator = 0;
+    let mut loop_cnt = 0;
     let mut started_at = Instant::now();
     let mut cnt_append_vecs: u32 = 0;
     let mut batch = Vec::with_capacity(64);
     while let Some(account1) = accounts_rx.recv().await {
+        loop_cnt += 1;
         if cnt_append_vecs == 0 {
             started_at = Instant::now();
         }
@@ -29,10 +32,11 @@ pub async fn main() {
             }
         }
         trace!("batch size: {}", batch.len());
+        avg_batchsize_cummulator += batch.len();
 
         for item in batch.drain(..) {
             cnt_append_vecs += 1;
-            if cnt_append_vecs % 100_000 == 0 {
+            if cnt_append_vecs % 1_000_000 == 0 {
                 info!(
                     "{} append vecs loaded after {:.3}s (speed {:.0}/s)",
                     cnt_append_vecs,
@@ -42,5 +46,12 @@ pub async fn main() {
             }
             debug!("account: {:?}", item);
         }
+
     }
+
+    // 35
+    info!(
+        "Average batch size: {}",
+        avg_batchsize_cummulator as f64 / loop_cnt as f64
+    );
 }

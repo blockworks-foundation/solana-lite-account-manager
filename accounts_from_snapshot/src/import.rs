@@ -43,7 +43,7 @@ pub async fn import_archive(archive_path: PathBuf) -> (Receiver<AccountData>, Jo
                                 _offset)
                 ) = append_vec.get_account(handle.offset) {
                     cnt_append_vecs += 1;
-                    if cnt_append_vecs % 100_000 == 0 {
+                    if cnt_append_vecs % 1_000_000 == 0 {
                         info!("{} append vecs loaded after {:.3}s (speed {:.0}/s)",
                         cnt_append_vecs, started_at.elapsed().as_secs_f64(), cnt_append_vecs as f64 / started_at.elapsed().as_secs_f64());
 
