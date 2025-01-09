@@ -27,7 +27,6 @@ pub async fn import_archive(archive_path: PathBuf) -> (Receiver<AccountData>, Jo
                 .as_str(),
             );
 
-
         let started_at = Instant::now();
         let mut cnt_append_vecs: u32 = 0;
 

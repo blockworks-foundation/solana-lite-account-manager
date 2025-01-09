@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Instant;
-use log::info;
+use log::{info, trace};
 use lite_accounts_from_snapshot::import::import_archive;
 
 #[tokio::main]
@@ -14,15 +14,30 @@ pub async fn main() {
 
     let mut started_at = Instant::now();
     let mut cnt_append_vecs: u32 = 0;
+    let mut batch = Vec::with_capacity(64);
     while let Some(account) = accounts_rx.recv().await {
         if cnt_append_vecs == 0 {
             started_at = Instant::now();
         }
-        cnt_append_vecs += 1;
-        if cnt_append_vecs % 100_000 == 0 {
-            info!("{} append vecs loaded after {:.3}s (speed {:.0}/s)",
-                            cnt_append_vecs, started_at.elapsed().as_secs_f64(), cnt_append_vecs as f64 / started_at.elapsed().as_secs_f64());
+
+        batch.clear();
+        batch.push(account);
+        'inner_drain_loop: while let Ok(item) = accounts_rx.try_recv() {
+            batch.push(item);
+            if batch.len() >= batch.capacity() {
+                break 'inner_drain_loop;
+            }
         }
-        // println!("account: {:?}", account);
+        trace!("batch size: {}", batch.len());
+
+        for item in batch.drain(..) {
+            cnt_append_vecs += 1;
+            if cnt_append_vecs % 100_000 == 0 {
+                info!("{} append vecs loaded after {:.3}s (speed {:.0}/s)",
+                                cnt_append_vecs, started_at.elapsed().as_secs_f64(), cnt_append_vecs as f64 / started_at.elapsed().as_secs_f64());
+            }
+            // println!("account: {:?}", account);
+        }
+
     }
 }
