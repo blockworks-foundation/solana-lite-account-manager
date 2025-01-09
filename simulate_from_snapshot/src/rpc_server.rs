@@ -3,6 +3,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::Context;
 use base64::Engine;
 use itertools::Itertools;
 use jsonrpsee::server::ServerBuilder;
@@ -21,7 +22,6 @@ use solana_rpc_client_api::{
     response::{OptionalContext, Response as RpcResponse, RpcKeyedAccount, RpcResponseContext},
 };
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey};
-use tokio::task::JoinHandle;
 use tower_http::cors::{Any, CorsLayer};
 
 #[rpc(server)]
@@ -60,10 +60,7 @@ impl RpcServerImpl {
         }
     }
 
-    pub async fn start_serving(
-        rpc_impl: RpcServerImpl,
-        port: u16,
-    ) -> anyhow::Result<JoinHandle<()>> {
+    pub async fn start_serving(rpc_impl: RpcServerImpl, port: u16) -> anyhow::Result<()> {
         let http_addr = format!("[::]:{port}");
         let cors = CorsLayer::new()
             .max_age(Duration::from_secs(86400))
@@ -82,15 +79,15 @@ impl RpcServerImpl {
             .max_response_body_size(512 * 1024 * 1024) // 512 MBs
             .http_only()
             .build(http_addr.clone())
-            .await?
+            .await
+            .context("failed binding RPC server, bind address may be occupied")?
             .start(rpc_impl.into_rpc());
 
-        let jh = tokio::spawn(async move {
-            log::info!("HTTP Server started at {http_addr:?}");
-            http_server_handle.stopped().await;
-            log::error!("QUIC GEYSER PLUGIN HTTP SERVER STOPPED");
-        });
-        Ok(jh)
+        log::info!("RPC server started at {http_addr:?}");
+        http_server_handle.stopped().await;
+        log::error!("RPC HTTP SERVER STOPPED");
+
+        Ok(())
     }
 }
 

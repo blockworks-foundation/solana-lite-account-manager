@@ -395,7 +395,7 @@ impl TokenProgramAccountsStorage {
                     TOKEN_MINTS_IN_MEMORY.dec();
                     self.mints_by_index.remove(&index);
                     self.accounts_index_by_mint.remove(&index);
-                } else if self.mints_index_by_pubkey.remove(&account_pk).is_some() {
+                } else if self.multisigs.remove(&account_pk).is_some() {
                     // do nothing multisig account is removed
                 } else {
                     self.token_accounts_storage.delete(&account_pk);

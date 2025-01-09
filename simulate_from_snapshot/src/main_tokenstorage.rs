@@ -122,7 +122,7 @@ async fn main() {
 
     log::info!("Start importing accounts from full snapshot");
     let (mut accounts_rx, _) = import_archive(archive_path).await;
-    let mut cnt = 0i32;
+    let mut cnt = 0u64;
     while let Some(AccountData {
         account, pubkey, ..
     }) = accounts_rx.recv().await
@@ -156,8 +156,7 @@ async fn main() {
         cnt
     );
     let rpc_server = RpcServerImpl::new(token_storage.clone(), Some(token_storage));
-    let jh = RpcServerImpl::start_serving(rpc_server, 10700)
+    RpcServerImpl::start_serving(rpc_server, 10700)
         .await
         .unwrap();
-    let _ = jh.await;
 }
