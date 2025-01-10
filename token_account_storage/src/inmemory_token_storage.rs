@@ -480,8 +480,9 @@ impl TokenProgramAccountsStorage {
                         dashmap::mapref::entry::Entry::Vacant(_) => None,
                     };
 
-                    let mint =
-                        mint_filter.map(|pk| *self.mints_index_by_pubkey.get(&pk).unwrap().value());
+                    let mint = mint_filter
+                        .and_then(|pk| self.mints_index_by_pubkey.get(&pk))
+                        .map(|mint_index| *mint_index.value());
 
                     match indexes {
                         Some(indexes) => {
@@ -549,9 +550,9 @@ impl TokenProgramAccountsStorage {
                 let mints = self
                     .mints_by_index
                     .iter()
-                    .filter(|mint_account| mint_account.value().program == program)
-                    .map(|mint_account| {
-                        token_mint_to_solana_account(mint_account.value(), finalized_slot, 0)
+                    .filter(|mint_account_entry| mint_account_entry.value().program == program)
+                    .map(|mint_account_entry| {
+                        token_mint_to_solana_account(mint_account_entry.value(), finalized_slot, 0)
                     })
                     .filter(|account| {
                         account_filters
@@ -562,7 +563,27 @@ impl TokenProgramAccountsStorage {
                 Ok(mints)
             }
             TokenProgramAccountFilter::MultisigFilter => {
-                unimplemented!("Multisig filter not implemented");
+                let multisigs = self
+                    .multisigs
+                    .iter()
+                    .filter(|multisig_account_entry| {
+                        multisig_account_entry.value().program == program
+                    })
+                    .map(|multisig_account_entry| {
+                        token_multisig_to_solana_account(
+                            multisig_account_entry.value(),
+                            multisig_account_entry.pubkey,
+                            finalized_slot,
+                            0,
+                        )
+                    })
+                    .filter(|account| {
+                        account_filters
+                            .iter()
+                            .all(|filter| filter.allows(&account.account.data.data()))
+                    })
+                    .collect_vec();
+                Ok(multisigs)
             }
             TokenProgramAccountFilter::NoFilter => {
                 Err(AccountLoadingError::ShouldContainAnAccountFilter)
