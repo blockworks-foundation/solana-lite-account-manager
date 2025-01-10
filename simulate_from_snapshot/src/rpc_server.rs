@@ -7,9 +7,11 @@ use itertools::Itertools;
 use jsonrpsee::server::ServerBuilder;
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use lite_account_manager_common::account_filter::AccountFilterType as AmAccountFilterType;
-use lite_account_manager_common::account_store_interface::AccountStorageInterface;
+use lite_account_manager_common::account_store_interface::{
+    AccountLoadingError, AccountStorageInterface,
+};
 use lite_account_manager_common::{account_data::AccountData, commitment::Commitment};
-use solana_account_decoder::UiAccount;
+use solana_account_decoder::{UiAccount, UiAccountEncoding};
 use solana_rpc_client_api::client_error::reqwest::Method;
 use solana_rpc_client_api::{
     config::{RpcAccountInfoConfig, RpcProgramAccountsConfig},
@@ -89,9 +91,9 @@ impl TestRpcServer for RpcServerImpl {
         program_id_str: String,
         config: Option<RpcProgramAccountsConfig>,
     ) -> RpcResult<OptionalContext<Vec<RpcKeyedAccount>>> {
-        let Ok(program_id) = Pubkey::from_str(&program_id_str) else {
-            return Err(jsonrpsee::types::error::ErrorCode::InvalidParams.into());
-        };
+        let program_id = Pubkey::from_str(&program_id_str)
+            .map_err(|_| jsonrpsee::types::error::ErrorCode::InvalidParams)?;
+
         let with_context = config
             .as_ref()
             .map(|value| value.with_context.unwrap_or_default())
@@ -104,33 +106,40 @@ impl TestRpcServer for RpcServerImpl {
 
         let account_filters = config
             .as_ref()
-            .map(|x| {
-                x.filters
-                    .as_ref()
-                    .map(|filters| filters.iter().map(AmAccountFilterType::from).collect_vec())
-            })
+            .and_then(|x| x.filters.as_ref())
+            .map(|filters| filters.iter().map(AmAccountFilterType::from).collect_vec())
             .unwrap_or_default();
 
         let commitment = Commitment::from(commitment);
 
         let gpa = self
             .storage
-            .get_program_accounts(program_id, account_filters, commitment)
+            .get_program_accounts(program_id, Some(account_filters), commitment)
             .map_err(|e| {
                 log::error!("get_program_accounts: {}", e);
-                jsonrpsee::types::error::ErrorCode::InternalError
+                match e {
+                    AccountLoadingError::AccountNotFound => {
+                        jsonrpsee::types::error::ErrorCode::InvalidParams
+                    }
+                    AccountLoadingError::ShouldContainAnAccountFilter => {
+                        jsonrpsee::types::error::ErrorCode::InvalidParams
+                    }
+                    AccountLoadingError::WrongIndex => {
+                        jsonrpsee::types::error::ErrorCode::InvalidParams
+                    }
+                    _ => jsonrpsee::types::error::ErrorCode::InternalError,
+                }
             })?;
         log::debug!("get_program_accounts: found {} accounts", gpa.len());
         let min_context_slot = config
             .as_ref()
-            .map(|c| {
+            .and_then(|c| {
                 if c.with_context.unwrap_or_default() {
                     c.account_config.min_context_slot
                 } else {
                     None
                 }
             })
-            .unwrap_or_default()
             .unwrap_or_default();
 
         let slot = gpa
@@ -221,9 +230,8 @@ pub fn convert_account_data_to_ui_account(
 ) -> UiAccount {
     let encoding = config
         .as_ref()
-        .map(|c| c.encoding)
-        .unwrap_or_default()
-        .unwrap_or(solana_account_decoder::UiAccountEncoding::Base64);
+        .and_then(|cfg| cfg.encoding)
+        .unwrap_or(UiAccountEncoding::Base64);
     let data_slice = config.as_ref().map(|c| c.data_slice).unwrap_or_default();
     UiAccount::encode(
         &account_data.pubkey,
