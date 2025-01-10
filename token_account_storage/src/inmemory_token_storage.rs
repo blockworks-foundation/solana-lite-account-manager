@@ -24,10 +24,10 @@ use crate::{
     account_types::{MintAccount, MintIndex, MultiSig, Program, TokenAccount, TokenAccountIndex},
     token_account_storage_interface::TokenAccountStorageInterface,
     token_program_utils::{
-        get_spl_token_owner_mint_filter, get_token_program_account_type,
+        get_token_program_account_filter, get_token_program_account_type,
         token_account_to_solana_account, token_mint_to_solana_account,
-        token_multisig_to_solana_account, token_program_account_to_solana_account,
-        TokenProgramAccountType,
+        token_multisig_to_solana_account, token_program_account_to_solana_account, AccountFilter,
+        TokenProgramAccountFilter, TokenProgramAccountType,
     },
 };
 
@@ -449,65 +449,54 @@ impl TokenProgramAccountsStorage {
         program_pubkey: Pubkey,
         account_filters: Option<Vec<AccountFilterType>>,
     ) -> Result<Vec<AccountData>, AccountLoadingError> {
+        let account_filters =
+            account_filters.ok_or(AccountLoadingError::ShouldContainAnAccountFilter)?;
+
+        let program = match program_pubkey {
+            spl_token::ID => Ok(Program::TokenProgram),
+            spl_token_2022::ID => Ok(Program::Token2022Program),
+            _ => Err(AccountLoadingError::WrongIndex),
+        }?;
+
         let finalized_slot = self.finalized_slot.load(Ordering::Relaxed);
+        let token_program_account_filter =
+            get_token_program_account_filter(&program_pubkey, &account_filters);
 
-        if let Some(account_filters) = account_filters {
-            let (owner, mint) = get_spl_token_owner_mint_filter(&program_pubkey, &account_filters);
-            if let Some(owner) = owner {
-                let indexes = match self.account_by_owner_pubkey.entry(owner.into()) {
-                    dashmap::mapref::entry::Entry::Occupied(token_acc_indexes) => Some(
-                        token_acc_indexes
-                            .get()
-                            .iter()
-                            .cloned()
-                            .collect::<HashSet<_>>(),
-                    ),
-                    dashmap::mapref::entry::Entry::Vacant(_) => None,
-                };
-
-                let mint = mint.map(|pk| *self.mints_index_by_pubkey.get(&pk).unwrap().value());
-
-                match indexes {
-                    Some(indexes) => {
-                        let token_accounts = self
-                            .token_accounts_storage
-                            .get_by_index(indexes)?
-                            .iter()
-                            .filter(|acc| {
-                                // filter by mint if necessary
-                                if let Some(mint) = mint {
-                                    acc.mint == mint && acc.owner == owner
-                                } else {
-                                    acc.owner == owner
-                                }
-                            })
-                            .filter_map(|token_account| {
-                                token_account_to_solana_account(
-                                    token_account,
-                                    finalized_slot,
-                                    0,
-                                    &self.mints_by_index,
-                                )
-                            })
-                            .collect_vec();
-                        Ok(token_accounts)
-                    }
-                    None => Ok(vec![]),
-                }
-            } else if let Some(mint) = mint {
-                // token account filter
-                match self.mints_index_by_pubkey.get(&mint) {
-                    Some(mint_index) => match self.accounts_index_by_mint.get(mint_index.value()) {
-                        Some(token_acc_indexes) => {
-                            let indexes = token_acc_indexes
-                                .value()
+        match token_program_account_filter {
+            TokenProgramAccountFilter::AccountFilter(AccountFilter {
+                owner: owner_filter,
+                mint: mint_filter,
+            }) => {
+                if let Some(owner) = owner_filter {
+                    // filter token accounts by owner
+                    let indexes = match self.account_by_owner_pubkey.entry(owner.into()) {
+                        dashmap::mapref::entry::Entry::Occupied(token_acc_indexes) => Some(
+                            token_acc_indexes
+                                .get()
                                 .iter()
                                 .cloned()
-                                .collect::<HashSet<u32>>();
+                                .collect::<HashSet<_>>(),
+                        ),
+                        dashmap::mapref::entry::Entry::Vacant(_) => None,
+                    };
+
+                    let mint =
+                        mint_filter.map(|pk| *self.mints_index_by_pubkey.get(&pk).unwrap().value());
+
+                    match indexes {
+                        Some(indexes) => {
                             let token_accounts = self
                                 .token_accounts_storage
                                 .get_by_index(indexes)?
                                 .iter()
+                                .filter(|acc| {
+                                    // filter by mint if necessary
+                                    if let Some(mint) = mint {
+                                        acc.mint == mint && acc.owner == owner
+                                    } else {
+                                        acc.owner == owner
+                                    }
+                                })
                                 .filter_map(|token_account| {
                                     token_account_to_solana_account(
                                         token_account,
@@ -520,14 +509,47 @@ impl TokenProgramAccountsStorage {
                             Ok(token_accounts)
                         }
                         None => Ok(vec![]),
-                    },
-                    None => Ok(vec![]),
+                    }
+                } else if let Some(mint) = mint_filter {
+                    // filter token accounts by mint
+                    match self.mints_index_by_pubkey.get(&mint) {
+                        Some(mint_index) => {
+                            match self.accounts_index_by_mint.get(mint_index.value()) {
+                                Some(token_acc_indexes) => {
+                                    let indexes = token_acc_indexes
+                                        .value()
+                                        .iter()
+                                        .cloned()
+                                        .collect::<HashSet<u32>>();
+                                    let token_accounts = self
+                                        .token_accounts_storage
+                                        .get_by_index(indexes)?
+                                        .iter()
+                                        .filter_map(|token_account| {
+                                            token_account_to_solana_account(
+                                                token_account,
+                                                finalized_slot,
+                                                0,
+                                                &self.mints_by_index,
+                                            )
+                                        })
+                                        .collect_vec();
+                                    Ok(token_accounts)
+                                }
+                                None => Ok(vec![]),
+                            }
+                        }
+                        None => Ok(vec![]),
+                    }
+                } else {
+                    Err(AccountLoadingError::ShouldContainAnAccountFilter)
                 }
-            } else if account_filters.contains(&AccountFilterType::Datasize(82)) {
-                // filtering by mint
+            }
+            TokenProgramAccountFilter::MintFilter => {
                 let mints = self
                     .mints_by_index
                     .iter()
+                    .filter(|mint_account| mint_account.value().program == program)
                     .map(|mint_account| {
                         token_mint_to_solana_account(mint_account.value(), finalized_slot, 0)
                     })
@@ -538,11 +560,13 @@ impl TokenProgramAccountsStorage {
                     })
                     .collect_vec();
                 Ok(mints)
-            } else {
+            }
+            TokenProgramAccountFilter::MultisigFilter => {
+                unimplemented!("Multisig filter not implemented");
+            }
+            TokenProgramAccountFilter::NoFilter => {
                 Err(AccountLoadingError::ShouldContainAnAccountFilter)
             }
-        } else {
-            Err(AccountLoadingError::ShouldContainAnAccountFilter)
         }
     }
 }

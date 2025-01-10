@@ -7,7 +7,7 @@ use solana_sdk::pubkey::Pubkey;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum AccountLoadingError {
     AccountNotFound,
-    ConfigDoesnotContainRequiredFilters,
+    ConfigDoesNotContainRequiredFilters,
     OperationTimeOut,
     ErrorCreatingSnapshot,
     ErrorSubscribingAccount,
