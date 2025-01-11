@@ -469,16 +469,13 @@ impl TokenProgramAccountsStorage {
             }) => {
                 if let Some(owner) = owner_filter {
                     // filter token accounts by owner
-                    let indexes = match self.account_by_owner_pubkey.entry(owner.into()) {
-                        dashmap::mapref::entry::Entry::Occupied(token_acc_indexes) => Some(
-                            token_acc_indexes
-                                .get()
-                                .iter()
-                                .cloned()
-                                .collect::<HashSet<_>>(),
-                        ),
-                        dashmap::mapref::entry::Entry::Vacant(_) => None,
-                    };
+                    let indexes: Option<HashSet<u32>> =
+                        match self.account_by_owner_pubkey.entry(owner.into()) {
+                            dashmap::mapref::entry::Entry::Occupied(token_acc_indexes) => {
+                                Some(token_acc_indexes.get().iter().cloned().collect())
+                            }
+                            dashmap::mapref::entry::Entry::Vacant(_) => None,
+                        };
 
                     let mint = mint_filter
                         .and_then(|pk| self.mints_index_by_pubkey.get(&pk))
@@ -517,11 +514,8 @@ impl TokenProgramAccountsStorage {
                         Some(mint_index) => {
                             match self.accounts_index_by_mint.get(mint_index.value()) {
                                 Some(token_acc_indexes) => {
-                                    let indexes = token_acc_indexes
-                                        .value()
-                                        .iter()
-                                        .cloned()
-                                        .collect::<HashSet<u32>>();
+                                    let indexes: HashSet<u32> =
+                                        token_acc_indexes.value().iter().cloned().collect();
                                     let token_accounts = self
                                         .token_accounts_storage
                                         .get_by_index(indexes)?
