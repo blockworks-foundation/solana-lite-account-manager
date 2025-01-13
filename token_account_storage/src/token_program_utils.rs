@@ -582,22 +582,21 @@ pub fn get_token_program_account_filter(
     };
 
     let mut data_size_filter: OnceCell<u64> = OnceCell::new();
-    let mut memcmp_filters: Vec<(&u64, &[u8])> = vec![];
+    let mut memcmp_filters: Vec<(u64, &[u8])> = vec![];
 
     for filter in filters {
         match filter {
-            AccountFilterType::DataSize(size) => match data_size_filter.set(*size) {
-                Ok(_) => {}
-                Err(_) => {
+            AccountFilterType::DataSize(size) => {
+                if let Err(_) = data_size_filter.set(*size) {
                     log::error!("Multiple data size filters provided");
                     return TokenProgramAccountFilter::FilterError;
                 }
-            },
+            }
             AccountFilterType::Memcmp(MemcmpFilter {
                 offset,
                 data: MemcmpFilterData::Bytes(bytes),
             }) => {
-                memcmp_filters.push((offset, bytes));
+                memcmp_filters.push((*offset, bytes));
             }
             _ => {}
         }
@@ -607,7 +606,7 @@ pub fn get_token_program_account_filter(
         .then(|| {
             memcmp_filters
                 .iter()
-                .find(|(offset, _)| **offset == spl_token_2022::state::Account::LEN as u64)
+                .find(|(offset, _)| *offset == spl_token_2022::state::Account::LEN as u64)
                 .and_then(|(_, bytes)| bytes.get(0).copied())
         })
         .flatten();
@@ -633,7 +632,7 @@ pub fn get_token_program_account_filter(
 
             let mint_filter = memcmp_filters
                 .iter()
-                .filter(|(offset, _)| *offset == &SPL_TOKEN_ACCOUNT_MINT_OFFSET)
+                .filter(|(offset, _)| *offset == SPL_TOKEN_ACCOUNT_MINT_OFFSET)
                 .at_most_one()
                 .map_err(|_| {
                     log::error!("Multiple filters provided for token account mint");
@@ -655,7 +654,7 @@ pub fn get_token_program_account_filter(
 
             let owner_filter =  memcmp_filters
                 .iter()
-                .filter(|(offset, _)| *offset == &SPL_TOKEN_ACCOUNT_OWNER_OFFSET)
+                .filter(|(offset, _)| *offset == SPL_TOKEN_ACCOUNT_OWNER_OFFSET)
                 .at_most_one()
                 .map_err(|_| {
                     log::error!("Multiple filters provided for token account owner");
