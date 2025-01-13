@@ -66,14 +66,14 @@ impl MemcmpFilter {
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug, PartialOrd, Ord)]
 #[serde(rename_all = "camelCase")]
 pub enum AccountFilterType {
-    Datasize(u64),
+    DataSize(u64),
     Memcmp(MemcmpFilter),
 }
 
 impl AccountFilterType {
     pub fn allows(&self, account_data: &[u8]) -> bool {
         match self {
-            AccountFilterType::Datasize(size) => account_data.len() as u64 == *size,
+            AccountFilterType::DataSize(size) => account_data.len() as u64 == *size,
             AccountFilterType::Memcmp(compare) => compare.bytes_match(account_data),
         }
     }
@@ -153,7 +153,7 @@ impl AccountFilter {
             filters
                 .iter()
                 .map(|filter| match filter {
-                    AccountFilterType::Datasize(size) => RpcFilterType::DataSize(*size),
+                    AccountFilterType::DataSize(size) => RpcFilterType::DataSize(*size),
                     AccountFilterType::Memcmp(memcpy) => {
                         let encoded_bytes = match &memcpy.data {
                             MemcmpFilterData::Bytes(bytes) => {
@@ -178,7 +178,7 @@ impl AccountFilter {
 impl From<&RpcFilterType> for AccountFilterType {
     fn from(value: &RpcFilterType) -> Self {
         match value {
-            RpcFilterType::DataSize(size) => AccountFilterType::Datasize(*size),
+            RpcFilterType::DataSize(size) => AccountFilterType::DataSize(*size),
             RpcFilterType::Memcmp(memcmp) => {
                 let bytes = memcmp.bytes().map(|x| (*x).clone()).unwrap_or_default();
                 let offset = memcmp.offset() as u64;
@@ -214,7 +214,7 @@ mod test {
             \"programId\": \"4MangoMjqJ2firMokCjjGgoK8d4MXcrgL7XJaL3w6fVg\",
             \"filters\": [
                 {
-                    \"datasize\": 200
+                    \"dataSize\": 200
                 }
             ]
         },
@@ -252,7 +252,7 @@ mod test {
             \"programId\": \"4MangoMjqJ2firMokCjjGgoK8d4MXcrgL7XJaL3w6fVg\",
             \"filters\": [
                 {
-                    \"datasize\": 200
+                    \"dataSize\": 200
                 },
                 {
                     \"memcmp\": {
@@ -293,7 +293,7 @@ mod test {
                 program_id: Some(
                     Pubkey::from_str("4MangoMjqJ2firMokCjjGgoK8d4MXcrgL7XJaL3w6fVg").unwrap()
                 ),
-                filters: Some(vec![AccountFilterType::Datasize(200)]),
+                filters: Some(vec![AccountFilterType::DataSize(200)]),
             }
         );
 
@@ -332,7 +332,7 @@ mod test {
                     Pubkey::from_str("4MangoMjqJ2firMokCjjGgoK8d4MXcrgL7XJaL3w6fVg").unwrap()
                 ),
                 filters: Some(vec![
-                    AccountFilterType::Datasize(200),
+                    AccountFilterType::DataSize(200),
                     AccountFilterType::Memcmp(MemcmpFilter {
                         offset: 100,
                         data: MemcmpFilterData::Bytes(vec![
@@ -569,7 +569,7 @@ mod test {
                 Pubkey::from_str("srmqPvymJeFKQ4zGQed1GFppgkRHL9kaELCbyksJtPX").unwrap(),
             ),
             filters: Some(vec![
-                AccountFilterType::Datasize(3228),
+                AccountFilterType::DataSize(3228),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: 0,
                     data: MemcmpFilterData::Bytes(
@@ -592,8 +592,8 @@ mod test {
         filters.push(open_orders);
 
         let filter_string = serde_json::to_string(&filters).unwrap();
-        let unserailized = serde_json::from_str::<AccountFilters>(&filter_string).unwrap();
-        assert_eq!(unserailized, filters);
+        let deserialized = serde_json::from_str::<AccountFilters>(&filter_string).unwrap();
+        assert_eq!(deserialized, filters);
         let filter_string = filter_string.replace('"', "\\\"");
         println!("Filter is : \n {} \n", filter_string);
     }

@@ -61,7 +61,7 @@ impl SimpleFilterStore {
                             .map_or(ProgramIdFilters::AllowAll, |filters| {
                                 // always save filters in bytes
                                 let filters = filters.iter().map(|x| match &x {
-                                    AccountFilterType::Datasize(_) => x.clone(),
+                                    AccountFilterType::DataSize(_) => x.clone(),
                                     AccountFilterType::Memcmp(memcmp) => {
                                         match memcmp.data {
                                             crate::account_filter::MemcmpFilterData::Bytes(_) => x.clone(),
@@ -195,7 +195,7 @@ mod tests {
         assert!(simple_store.contains_filter_internal(&AccountFilter {
             accounts: vec![],
             program_id: Some(program_id),
-            filters: Some(vec![AccountFilterType::Datasize(100)]),
+            filters: Some(vec![AccountFilterType::DataSize(100)]),
         }));
 
         // contains a subfilter
@@ -203,7 +203,7 @@ mod tests {
             accounts: vec![],
             program_id: Some(program_id),
             filters: Some(vec![
-                AccountFilterType::Datasize(100),
+                AccountFilterType::DataSize(100),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: 2,
                     data: crate::account_filter::MemcmpFilterData::Bytes(vec![123])
@@ -220,7 +220,7 @@ mod tests {
             accounts: vec![],
             program_id: Some(program_id),
             filters: Some(vec![
-                AccountFilterType::Datasize(100),
+                AccountFilterType::DataSize(100),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: 2,
                     data: crate::account_filter::MemcmpFilterData::Bytes(vec![123]),
@@ -243,7 +243,7 @@ mod tests {
         assert!(!simple_store.contains_filter_internal(&AccountFilter {
             accounts: vec![],
             program_id: Some(program_id),
-            filters: Some(vec![AccountFilterType::Datasize(100)]),
+            filters: Some(vec![AccountFilterType::DataSize(100)]),
         }));
 
         // contains a subfilter
@@ -251,7 +251,7 @@ mod tests {
             accounts: vec![],
             program_id: Some(program_id),
             filters: Some(vec![
-                AccountFilterType::Datasize(100),
+                AccountFilterType::DataSize(100),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: 2,
                     data: crate::account_filter::MemcmpFilterData::Bytes(vec![123])
@@ -268,7 +268,7 @@ mod tests {
                     offset: 2,
                     data: crate::account_filter::MemcmpFilterData::Bytes(vec![123])
                 }),
-                AccountFilterType::Datasize(100)
+                AccountFilterType::DataSize(100)
             ]),
         }));
 
@@ -285,7 +285,7 @@ mod tests {
                     offset: 2,
                     data: crate::account_filter::MemcmpFilterData::Bytes(vec![123])
                 }),
-                AccountFilterType::Datasize(100)
+                AccountFilterType::DataSize(100)
             ]),
         }));
     }
@@ -298,7 +298,7 @@ mod tests {
             accounts: vec![],
             program_id: Some(program_id),
             filters: Some(vec![
-                AccountFilterType::Datasize(100),
+                AccountFilterType::DataSize(100),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: 2,
                     data: crate::account_filter::MemcmpFilterData::Bytes(vec![1, 2, 3]),
@@ -325,7 +325,7 @@ mod tests {
         assert!(!simple_store.contains_filter_internal(&AccountFilter {
             accounts: vec![],
             program_id: Some(program_id),
-            filters: Some(vec![AccountFilterType::Datasize(100)]),
+            filters: Some(vec![AccountFilterType::DataSize(100)]),
         }));
 
         // contains a subfilter
@@ -333,7 +333,7 @@ mod tests {
             accounts: vec![],
             program_id: Some(program_id),
             filters: Some(vec![
-                AccountFilterType::Datasize(100),
+                AccountFilterType::DataSize(100),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: 2,
                     data: crate::account_filter::MemcmpFilterData::Bytes(vec![123])
@@ -345,7 +345,7 @@ mod tests {
             accounts: vec![],
             program_id: Some(program_id),
             filters: Some(vec![
-                AccountFilterType::Datasize(100),
+                AccountFilterType::DataSize(100),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: 2,
                     data: crate::account_filter::MemcmpFilterData::Bytes(vec![1, 2, 3])
@@ -365,7 +365,7 @@ mod tests {
                     offset: 2,
                     data: crate::account_filter::MemcmpFilterData::Bytes(vec![1, 2, 3])
                 }),
-                AccountFilterType::Datasize(100),
+                AccountFilterType::DataSize(100),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: 10,
                     data: crate::account_filter::MemcmpFilterData::Bytes(vec![5, 6, 7])
@@ -385,7 +385,7 @@ mod tests {
                     offset: 10,
                     data: crate::account_filter::MemcmpFilterData::Bytes(vec![5, 6, 7])
                 }),
-                AccountFilterType::Datasize(100),
+                AccountFilterType::DataSize(100),
             ]),
         }));
 
@@ -401,7 +401,7 @@ mod tests {
                     offset: 2,
                     data: crate::account_filter::MemcmpFilterData::Bytes(vec![1, 2, 3])
                 }),
-                AccountFilterType::Datasize(100),
+                AccountFilterType::DataSize(100),
             ]),
         }));
 
@@ -422,7 +422,7 @@ mod tests {
                     offset: 20,
                     data: crate::account_filter::MemcmpFilterData::Bytes(vec![4, 5, 6])
                 }),
-                AccountFilterType::Datasize(100),
+                AccountFilterType::DataSize(100),
             ]),
         }));
     }

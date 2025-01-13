@@ -90,7 +90,7 @@ pub fn test_gpa_token_account() {
         .get_program_accounts(
             spl_token::id(),
             Some(vec![
-                AccountFilterType::Datasize(165),
+                AccountFilterType::DataSize(165),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: 32,
                     data: lite_account_manager_common::account_filter::MemcmpFilterData::Bytes(
@@ -110,7 +110,7 @@ pub fn test_gpa_token_account() {
         .get_program_accounts(
             spl_token::id(),
             Some(vec![
-                AccountFilterType::Datasize(165),
+                AccountFilterType::DataSize(165),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: 32,
                     data: lite_account_manager_common::account_filter::MemcmpFilterData::Bytes(
@@ -129,7 +129,7 @@ pub fn test_gpa_token_account() {
         .get_program_accounts(
             spl_token::id(),
             Some(vec![
-                AccountFilterType::Datasize(165),
+                AccountFilterType::DataSize(165),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: 32,
                     data: lite_account_manager_common::account_filter::MemcmpFilterData::Bytes(
@@ -151,7 +151,7 @@ pub fn test_gpa_token_account() {
         .get_program_accounts(
             spl_token::id(),
             Some(vec![
-                AccountFilterType::Datasize(165),
+                AccountFilterType::DataSize(165),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: 32,
                     data: lite_account_manager_common::account_filter::MemcmpFilterData::Bytes(
@@ -178,7 +178,7 @@ pub fn test_gpa_token_account() {
         .get_program_accounts(
             spl_token::id(),
             Some(vec![
-                AccountFilterType::Datasize(165),
+                AccountFilterType::DataSize(165),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: 0,
                     data: lite_account_manager_common::account_filter::MemcmpFilterData::Bytes(
@@ -201,7 +201,7 @@ pub fn test_gpa_token_account() {
         .get_program_accounts(
             spl_token::id(),
             Some(vec![
-                AccountFilterType::Datasize(165),
+                AccountFilterType::DataSize(165),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: 0,
                     data: lite_account_manager_common::account_filter::MemcmpFilterData::Bytes(
@@ -221,7 +221,7 @@ pub fn test_gpa_token_account() {
     let mint_gpa = token_store
         .get_program_accounts(
             spl_token::id(),
-            Some(vec![AccountFilterType::Datasize(82)]),
+            Some(vec![AccountFilterType::DataSize(82)]),
             Commitment::Processed,
         )
         .unwrap();
