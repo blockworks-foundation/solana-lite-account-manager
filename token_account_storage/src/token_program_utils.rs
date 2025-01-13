@@ -550,6 +550,7 @@ pub enum TokenProgramAccountFilter {
     MintFilter,
     MultisigFilter,
     NoFilter,
+    FilterError,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -612,36 +613,60 @@ pub fn get_token_program_account_filter(
             const SPL_TOKEN_ACCOUNT_MINT_OFFSET: u64 = 0;
             const SPL_TOKEN_ACCOUNT_OWNER_OFFSET: u64 = 32;
 
-            let token_owner_mint_filter = memcmp_filters.into_iter().fold(
-                AccountFilter {
-                    owner: None,
-                    mint: None,
-                },
-                |mut acc, (offset, bytes)| {
-                    if offset == &SPL_TOKEN_ACCOUNT_MINT_OFFSET {
-                        if bytes.len() == PUBKEY_BYTES {
-                            acc.mint = Pubkey::try_from(bytes).ok();
-                        } else {
-                            log::warn!(
-                                "Incorrect num bytes ({:?}) provided for token account mint",
+            let mint_filter = memcmp_filters
+                .iter()
+                .filter(|(offset, _)| *offset == &SPL_TOKEN_ACCOUNT_MINT_OFFSET)
+                .at_most_one()
+                .map_err(|_| {
+                    log::error!("Multiple filters provided for token account mint");
+                    TokenProgramAccountFilter::FilterError
+                })
+                .and_then(|filter| {
+                    filter.map_or(Ok(None), |(_, bytes)| {
+                        if bytes.len() != PUBKEY_BYTES {
+                            log::error!(
+                                "Incorrect num bytes ({:?}) provided for token account mint filter",
                                 bytes.len()
                             );
+                            return Err(TokenProgramAccountFilter::FilterError);
                         }
-                    } else if offset == &SPL_TOKEN_ACCOUNT_OWNER_OFFSET {
-                        if bytes.len() == PUBKEY_BYTES {
-                            acc.owner = Pubkey::try_from(bytes).ok();
-                        } else {
-                            log::warn!(
-                                "Incorrect num bytes ({:?}) provided for token account owner",
-                                bytes.len()
-                            );
-                        }
-                    }
-                    acc
-                },
-            );
 
-            TokenProgramAccountFilter::AccountFilter(token_owner_mint_filter)
+                        Ok(Pubkey::try_from(*bytes).ok())
+                    })
+                });
+
+            let owner_filter =  memcmp_filters
+                .iter()
+                .filter(|(offset, _)| *offset == &SPL_TOKEN_ACCOUNT_OWNER_OFFSET)
+                .at_most_one()
+                .map_err(|_| {
+                    log::error!("Multiple filters provided for token account owner");
+                    TokenProgramAccountFilter::FilterError
+                })
+                .and_then(|filter| {
+                    filter.map_or(Ok(None), |(_, bytes)| {
+                        if bytes.len() != PUBKEY_BYTES {
+                            log::error!(
+                                "Incorrect num bytes ({:?}) provided for token account owner filter",
+                                bytes.len()
+                            );
+                            return Err(TokenProgramAccountFilter::FilterError);
+                        }
+
+                        Ok(Pubkey::try_from(*bytes).ok())
+                    })
+                });
+
+            owner_filter
+                .and_then(|owner_filter| {
+                    mint_filter.map(|mint_filter| {
+                        TokenProgramAccountFilter::AccountFilter(AccountFilter {
+                            owner: owner_filter,
+                            mint: mint_filter,
+                        })
+                    })
+                })
+                .unwrap_or_else(|res| res)
         }
         AccountType::Mint => TokenProgramAccountFilter::MintFilter,
         AccountType::Multisig => TokenProgramAccountFilter::MultisigFilter,
