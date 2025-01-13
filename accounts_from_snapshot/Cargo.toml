@@ -13,6 +13,7 @@ lite-account-storage = { workspace = true}
 
 solana-frozen-abi-macro = { workspace = true }
 solana-runtime = { workspace = true }
+solana-logger = {    workspace = true }
 solana-sdk = { workspace = true }
 solana-accounts-db = { workspace = true }
 

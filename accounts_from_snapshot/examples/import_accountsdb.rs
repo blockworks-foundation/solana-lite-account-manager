@@ -22,7 +22,8 @@ use lite_accounts_from_snapshot::{start_backfill_import_from_snapshot, Config, H
 
 #[tokio::main]
 pub async fn main() {
-    tracing_subscriber::fmt::init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    solana_logger::setup_with_default("info");
 
     let grpc_addr = env::var("GRPC_ADDR").expect("need grpc url");
     let grpc_x_token = env::var("GRPC_X_TOKEN").ok();

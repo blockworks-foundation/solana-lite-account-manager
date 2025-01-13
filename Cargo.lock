@@ -2683,6 +2683,7 @@ dependencies = [
  "solana-accounts-db",
  "solana-download-utils",
  "solana-frozen-abi-macro",
+ "solana-logger",
  "solana-runtime",
  "solana-sdk",
  "tar",
