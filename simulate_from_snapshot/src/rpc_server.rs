@@ -127,6 +127,9 @@ impl TestRpcServer for RpcServerImpl {
                     AccountLoadingError::WrongIndex => {
                         jsonrpsee::types::error::ErrorCode::InvalidParams
                     }
+                    AccountLoadingError::TokenAccountsCannotUseThisFilter => {
+                        jsonrpsee::types::error::ErrorCode::InvalidParams
+                    }
                     _ => jsonrpsee::types::error::ErrorCode::InternalError,
                 }
             })?;

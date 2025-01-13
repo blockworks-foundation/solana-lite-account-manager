@@ -463,19 +463,19 @@ impl TokenProgramAccountsStorage {
             get_token_program_account_filter(&program_pubkey, &account_filters);
 
         match token_program_account_filter {
+            TokenProgramAccountFilter::FilterError => {
+                Err(AccountLoadingError::TokenAccountsCannotUseThisFilter)
+            }
             TokenProgramAccountFilter::AccountFilter(AccountFilter {
                 owner: owner_filter,
                 mint: mint_filter,
             }) => {
                 if let Some(owner) = owner_filter {
-                    // filter token accounts by owner
-                    let indexes: Option<HashSet<u32>> =
-                        match self.account_by_owner_pubkey.entry(owner.into()) {
-                            dashmap::mapref::entry::Entry::Occupied(token_acc_indexes) => {
-                                Some(token_acc_indexes.get().iter().cloned().collect())
-                            }
-                            dashmap::mapref::entry::Entry::Vacant(_) => None,
-                        };
+                    // filter token accounts by owner and optionally by mint
+                    let indexes: Option<HashSet<u32>> = self
+                        .account_by_owner_pubkey
+                        .get(&owner.into())
+                        .map(|indexes| indexes.iter().cloned().collect());
 
                     let mint = mint_filter
                         .and_then(|pk| self.mints_index_by_pubkey.get(&pk))
