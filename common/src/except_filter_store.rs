@@ -67,13 +67,13 @@ mod tests {
         assert!(except_filter_store.contains_filter(&AccountFilter {
             accounts: vec![],
             program_id: Some(Pubkey::new_unique()),
-            filters: Some(vec![AccountFilterType::Datasize(100)])
+            filters: Some(vec![AccountFilterType::DataSize(100)])
         }));
         assert!(except_filter_store.contains_filter(&AccountFilter {
             accounts: vec![],
             program_id: Some(Pubkey::new_unique()),
             filters: Some(vec![
-                AccountFilterType::Datasize(200),
+                AccountFilterType::DataSize(200),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: 100,
                     data: crate::account_filter::MemcmpFilterData::Bytes(vec![1, 2, 3])
@@ -89,13 +89,13 @@ mod tests {
         assert!(!except_filter_store.contains_filter(&AccountFilter {
             accounts: vec![],
             program_id: Some(program_id_1),
-            filters: Some(vec![AccountFilterType::Datasize(100)])
+            filters: Some(vec![AccountFilterType::DataSize(100)])
         }));
         assert!(!except_filter_store.contains_filter(&AccountFilter {
             accounts: vec![],
             program_id: Some(program_id_1),
             filters: Some(vec![
-                AccountFilterType::Datasize(200),
+                AccountFilterType::DataSize(200),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: 100,
                     data: crate::account_filter::MemcmpFilterData::Bytes(vec![1, 2, 3])
@@ -111,13 +111,13 @@ mod tests {
         assert!(!except_filter_store.contains_filter(&AccountFilter {
             accounts: vec![],
             program_id: Some(program_id_2),
-            filters: Some(vec![AccountFilterType::Datasize(100)])
+            filters: Some(vec![AccountFilterType::DataSize(100)])
         }));
         assert!(!except_filter_store.contains_filter(&AccountFilter {
             accounts: vec![],
             program_id: Some(program_id_2),
             filters: Some(vec![
-                AccountFilterType::Datasize(200),
+                AccountFilterType::DataSize(200),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: 100,
                     data: crate::account_filter::MemcmpFilterData::Bytes(vec![1, 2, 3])

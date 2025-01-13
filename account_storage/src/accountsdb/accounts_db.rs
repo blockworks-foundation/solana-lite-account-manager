@@ -161,7 +161,7 @@ impl AccountStorageInterface for AccountsDb {
 
         let filter = |data: &AccountSharedData| match &account_filter {
             Some(filters) => filters.iter().all(|filter| match filter {
-                AccountFilterType::Datasize(size) => data.data().len() == *size as usize,
+                AccountFilterType::DataSize(size) => data.data().len() == *size as usize,
                 AccountFilterType::Memcmp(cmp) => cmp.bytes_match(data.data()),
             }),
             None => true,
@@ -563,7 +563,7 @@ mod tests {
             ));
 
             let mut result = ti
-                .get_program_accounts(pk, Some(vec![AccountFilterType::Datasize(3)]), Processed)
+                .get_program_accounts(pk, Some(vec![AccountFilterType::DataSize(3)]), Processed)
                 .unwrap();
             assert_eq!(result.len(), 1);
             let result = result.pop().unwrap();
@@ -637,7 +637,7 @@ mod tests {
                 .get_program_accounts(
                     pk,
                     Some(vec![
-                        AccountFilterType::Datasize(6),
+                        AccountFilterType::DataSize(6),
                         AccountFilterType::Memcmp(MemcmpFilter::new(
                             1,
                             MemcmpFilterData::Bytes(Vec::from("bcdef")),

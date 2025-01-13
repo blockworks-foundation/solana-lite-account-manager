@@ -575,7 +575,7 @@ pub fn get_token_program_account_filter(
 
     for filter in filters {
         match filter {
-            AccountFilterType::Datasize(size) => match data_size_filter.set(*size) {
+            AccountFilterType::DataSize(size) => match data_size_filter.set(*size) {
                 Ok(_) => {}
                 Err(_) => {
                     log::error!("Multiple data size filters provided");
@@ -694,7 +694,7 @@ mod test {
 
         #[test]
         fn test_filter_for_non_token_program() {
-            let filters = vec![AccountFilterType::Datasize(
+            let filters = vec![AccountFilterType::DataSize(
                 spl_token_2022::state::Mint::LEN as u64,
             )];
             let filter =
@@ -706,8 +706,8 @@ mod test {
         #[test]
         fn test_filter_for_multiple_data_sizes() {
             let filters = vec![
-                AccountFilterType::Datasize(spl_token_2022::state::Mint::LEN as u64),
-                AccountFilterType::Datasize(spl_token_2022::state::Mint::LEN as u64),
+                AccountFilterType::DataSize(spl_token_2022::state::Mint::LEN as u64),
+                AccountFilterType::DataSize(spl_token_2022::state::Mint::LEN as u64),
             ];
             let filter = get_token_program_account_filter(&spl_token_2022::ID, &filters);
 
@@ -718,7 +718,7 @@ mod test {
         fn test_overlapping_token_account_or_owner_mint_filters() {
             // multiple filters for mint
             let filters = vec![
-                AccountFilterType::Datasize(spl_token::state::Account::LEN as u64),
+                AccountFilterType::DataSize(spl_token::state::Account::LEN as u64),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: 0,
                     data: MemcmpFilterData::Bytes(
@@ -739,7 +739,7 @@ mod test {
 
             // incorrect mint filter data size
             let filters = vec![
-                AccountFilterType::Datasize(spl_token::state::Account::LEN as u64),
+                AccountFilterType::DataSize(spl_token::state::Account::LEN as u64),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: 0,
                     data: MemcmpFilterData::Bytes(
@@ -754,7 +754,7 @@ mod test {
 
             // multiple filters for owner
             let filters = vec![
-                AccountFilterType::Datasize(spl_token::state::Account::LEN as u64),
+                AccountFilterType::DataSize(spl_token::state::Account::LEN as u64),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: 32,
                     data: MemcmpFilterData::Bytes(
@@ -775,7 +775,7 @@ mod test {
 
             // incorrect owner filter data size
             let filters = vec![
-                AccountFilterType::Datasize(spl_token::state::Account::LEN as u64),
+                AccountFilterType::DataSize(spl_token::state::Account::LEN as u64),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: 32,
                     data: MemcmpFilterData::Bytes(
@@ -800,14 +800,14 @@ mod test {
 
         #[test]
         fn test_filter_for_mint() {
-            let filters = vec![AccountFilterType::Datasize(
+            let filters = vec![AccountFilterType::DataSize(
                 spl_token::state::Mint::LEN as u64,
             )];
             let filter = get_token_program_account_filter(&spl_token::ID, &filters);
 
             assert_eq!(filter, TokenProgramAccountFilter::MintFilter);
 
-            let filters = vec![AccountFilterType::Datasize(
+            let filters = vec![AccountFilterType::DataSize(
                 spl_token_2022::state::Mint::LEN as u64,
             )];
             let filter = get_token_program_account_filter(&spl_token_2022::ID, &filters);
@@ -817,14 +817,14 @@ mod test {
 
         #[test]
         fn test_filter_for_multisig() {
-            let filters = vec![AccountFilterType::Datasize(
+            let filters = vec![AccountFilterType::DataSize(
                 spl_token::state::Multisig::LEN as u64,
             )];
             let filter = get_token_program_account_filter(&spl_token::ID, &filters);
 
             assert_eq!(filter, TokenProgramAccountFilter::MultisigFilter);
 
-            let filters = vec![AccountFilterType::Datasize(
+            let filters = vec![AccountFilterType::DataSize(
                 spl_token_2022::state::Multisig::LEN as u64,
             )];
             let filter = get_token_program_account_filter(&spl_token_2022::ID, &filters);
@@ -837,7 +837,7 @@ mod test {
             let data_size = spl_token::state::Account::LEN as u64;
 
             // filter only by token accounts
-            let filters = vec![AccountFilterType::Datasize(data_size)];
+            let filters = vec![AccountFilterType::DataSize(data_size)];
             let filter = get_token_program_account_filter(&spl_token::ID, &filters);
 
             assert_eq!(
@@ -851,7 +851,7 @@ mod test {
             // filter by token accounts && mint
             let mint_pubkey = solana_sdk::pubkey::new_rand();
             let filters = vec![
-                AccountFilterType::Datasize(data_size),
+                AccountFilterType::DataSize(data_size),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: 0,
                     data: MemcmpFilterData::Bytes(mint_pubkey.to_bytes().to_vec()),
@@ -870,7 +870,7 @@ mod test {
             // filter by token accounts && owner
             let owner_pubkey = solana_sdk::pubkey::new_rand();
             let filters = vec![
-                AccountFilterType::Datasize(data_size),
+                AccountFilterType::DataSize(data_size),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: 32,
                     data: MemcmpFilterData::Bytes(owner_pubkey.to_bytes().to_vec()),
@@ -890,7 +890,7 @@ mod test {
             let mint_pubkey = solana_sdk::pubkey::new_rand();
             let owner_pubkey = solana_sdk::pubkey::new_rand();
             let filters = vec![
-                AccountFilterType::Datasize(spl_token::state::Account::LEN as u64),
+                AccountFilterType::DataSize(spl_token::state::Account::LEN as u64),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: 0,
                     data: MemcmpFilterData::Bytes(mint_pubkey.to_bytes().to_vec()),
@@ -915,7 +915,7 @@ mod test {
         fn test_filter_for_token_account_2022_without_extensions() {
             let data_size = spl_token_2022::state::Account::LEN as u64;
             // filter only by token accounts
-            let filters = vec![AccountFilterType::Datasize(data_size)];
+            let filters = vec![AccountFilterType::DataSize(data_size)];
             let filter = get_token_program_account_filter(&spl_token_2022::ID, &filters);
 
             assert_eq!(
@@ -929,7 +929,7 @@ mod test {
             // filter by token accounts && mint
             let mint_pubkey = solana_sdk::pubkey::new_rand();
             let filters = vec![
-                AccountFilterType::Datasize(data_size),
+                AccountFilterType::DataSize(data_size),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: 0,
                     data: MemcmpFilterData::Bytes(mint_pubkey.to_bytes().to_vec()),
@@ -948,7 +948,7 @@ mod test {
             // filter by token accounts && owner
             let owner_pubkey = solana_sdk::pubkey::new_rand();
             let filters = vec![
-                AccountFilterType::Datasize(data_size),
+                AccountFilterType::DataSize(data_size),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: 32,
                     data: MemcmpFilterData::Bytes(owner_pubkey.to_bytes().to_vec()),
@@ -968,7 +968,7 @@ mod test {
             let mint_pubkey = solana_sdk::pubkey::new_rand();
             let owner_pubkey = solana_sdk::pubkey::new_rand();
             let filters = vec![
-                AccountFilterType::Datasize(data_size),
+                AccountFilterType::DataSize(data_size),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: 0,
                     data: MemcmpFilterData::Bytes(mint_pubkey.to_bytes().to_vec()),
@@ -994,14 +994,14 @@ mod test {
             let data_size = spl_token_2022::state::Account::LEN as u64 + 1;
 
             // filter by token accounts with extensions without specifying the type
-            let filters = vec![AccountFilterType::Datasize(data_size)];
+            let filters = vec![AccountFilterType::DataSize(data_size)];
             let filter = get_token_program_account_filter(&spl_token_2022::ID, &filters);
 
             assert_eq!(filter, TokenProgramAccountFilter::NoFilter);
 
             // filter by token accounts with extensions specifying the type
             let filters = vec![
-                AccountFilterType::Datasize(data_size),
+                AccountFilterType::DataSize(data_size),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: spl_token_2022::state::Account::LEN as u64,
                     data: MemcmpFilterData::Bytes(vec![
@@ -1022,7 +1022,7 @@ mod test {
             // filter by token accounts with extensions && mint
             let mint_pubkey = solana_sdk::pubkey::new_rand();
             let filters = vec![
-                AccountFilterType::Datasize(data_size),
+                AccountFilterType::DataSize(data_size),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: spl_token_2022::state::Account::LEN as u64,
                     data: MemcmpFilterData::Bytes(vec![
@@ -1047,7 +1047,7 @@ mod test {
             // filter by token accounts with extensions && owner
             let owner_pubkey = solana_sdk::pubkey::new_rand();
             let filters = vec![
-                AccountFilterType::Datasize(data_size),
+                AccountFilterType::DataSize(data_size),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: spl_token_2022::state::Account::LEN as u64,
                     data: MemcmpFilterData::Bytes(vec![
@@ -1073,7 +1073,7 @@ mod test {
             let mint_pubkey = solana_sdk::pubkey::new_rand();
             let owner_pubkey = solana_sdk::pubkey::new_rand();
             let filters = vec![
-                AccountFilterType::Datasize(data_size),
+                AccountFilterType::DataSize(data_size),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: spl_token_2022::state::Account::LEN as u64,
                     data: MemcmpFilterData::Bytes(vec![

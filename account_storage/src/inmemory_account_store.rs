@@ -1057,7 +1057,7 @@ mod tests {
         let gpa_2 = store
             .get_program_accounts(
                 prog_1,
-                Some(vec![AccountFilterType::Datasize(100)]),
+                Some(vec![AccountFilterType::DataSize(100)]),
                 Commitment::Finalized,
             )
             .unwrap()
@@ -1117,7 +1117,7 @@ mod tests {
         let gpa = store
             .get_program_accounts(
                 prog_1,
-                Some(vec![AccountFilterType::Datasize(300)]),
+                Some(vec![AccountFilterType::DataSize(300)]),
                 Commitment::Finalized,
             )
             .unwrap()
