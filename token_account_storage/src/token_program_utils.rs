@@ -62,6 +62,19 @@ enum SplTokenProgram {
     Token2022Program,
 }
 
+impl TryFrom<&Pubkey> for SplTokenProgram {
+    type Error = ();
+
+    fn try_from(pubkey: &Pubkey) -> Result<Self, Self::Error> {
+        match *pubkey {
+            spl_token::ID => Ok(SplTokenProgram::TokenProgram),
+            spl_token_2022::ID => Ok(SplTokenProgram::Token2022Program),
+            _ => Err(()),
+        }
+    }
+}
+
+// this enum covers old and new (2022) accounts
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum AccountType {
     Mint,
@@ -129,10 +142,9 @@ pub fn get_token_program_account_type(
         return Ok(TokenProgramAccountType::Deleted(account_data.pubkey));
     }
 
-    let token_program = match account_data.account.owner {
-        spl_token::ID => SplTokenProgram::TokenProgram,
-        spl_token_2022::ID => SplTokenProgram::Token2022Program,
-        _ => return Ok(TokenProgramAccountType::Deleted(account_data.pubkey)),
+    let token_program: SplTokenProgram = match (&account_data.account.owner).try_into() {
+        Ok(token_program) => token_program,
+        Err(_) => return Ok(TokenProgramAccountType::Deleted(account_data.pubkey)),
     };
 
     let packed_data = account_data.account.data.data();
@@ -564,10 +576,9 @@ pub fn get_token_program_account_filter(
     program_id: &Pubkey,
     filters: &[AccountFilterType],
 ) -> TokenProgramAccountFilter {
-    let token_program = match *program_id {
-        spl_token::ID => SplTokenProgram::TokenProgram,
-        spl_token_2022::ID => SplTokenProgram::Token2022Program,
-        _ => return TokenProgramAccountFilter::NoFilter,
+    let token_program: SplTokenProgram = match program_id.try_into() {
+        Ok(token_program) => token_program,
+        Err(_) => return TokenProgramAccountFilter::NoFilter,
     };
 
     let mut data_size_filter: OnceCell<u64> = OnceCell::new();
