@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use itertools::Itertools;
@@ -32,7 +33,7 @@ pub const ACCOUNTS_INDEX_CONFIG: AccountsIndexConfig = AccountsIndexConfig {
     bins: Some(BINS),
     flush_threads: Some(FLUSH_THREADS),
     drives: None,
-    index_limit_mb: IndexLimitMb::Unspecified,
+    index_limit_mb: IndexLimitMb::Limit(3 * 1024 * 1024 * 1024), // TODO
     ages_to_stay_in_cache: None,
     scan_results_limit_bytes: None,
     started_from_validator: false,
@@ -53,6 +54,34 @@ pub const ACCOUNTS_DB_CONFIG: AccountsDbConfig = AccountsDbConfig {
     test_skip_rewrites_but_include_in_bank_hash: false,
     storage_access: StorageAccess::Mmap,
 };
+
+fn create_accounts_db_config(account_index_paths: Vec<PathBuf>) -> AccountsDbConfig{
+    let account_index_config = AccountsIndexConfig {
+        bins: Some(BINS),
+        flush_threads: Some(FLUSH_THREADS),
+        drives: Some(account_index_paths),
+        index_limit_mb: IndexLimitMb::Limit(3 * 1024 * 1024 * 1024), // TODO
+        ages_to_stay_in_cache: None,
+        scan_results_limit_bytes: None,
+        started_from_validator: false,
+    };
+
+    AccountsDbConfig {
+        index: Some(account_index_config),
+        base_working_path: None,
+        accounts_hash_cache_path: None,
+        shrink_paths: None,
+        read_cache_limit_bytes: None,
+        write_cache_limit_bytes: None,
+        ancient_append_vec_offset: None,
+        skip_initial_hash_calc: false,
+        exhaustively_verify_refcounts: false,
+        create_ancient_storage: CreateAncientStorage::Pack,
+        test_partitioned_epoch_rewards: TestPartitionedEpochRewards::None,
+        test_skip_rewrites_but_include_in_bank_hash: false,
+        storage_access: StorageAccess::Mmap,
+    }
+}
 
 pub struct AccountsDb {
     accounts: Accounts,
@@ -113,6 +142,25 @@ impl AccountsDb {
         }
     }
 
+    #[allow(clippy::new_without_default)]
+    pub fn new_with_account_paths(account_paths: Vec<PathBuf>, account_index_paths: Vec<PathBuf>) -> Self {
+        let db = SolanaAccountsDb::new_with_config(
+            account_paths,
+            &ClusterType::MainnetBeta,
+            AccountSecondaryIndexes::default(),
+            AccountShrinkThreshold::default(),
+            Some(create_accounts_db_config(account_index_paths)),
+            None,
+            Arc::default(),
+        );
+
+        let accounts = Accounts::new(Arc::new(db));
+        Self {
+            accounts,
+            slot_state: SlotState::new(0, 0, 0),
+        }
+    }
+
     pub fn new_for_testing() -> Self {
         let db = SolanaAccountsDb::new_single_for_tests();
         let accounts = Accounts::new(Arc::new(db));
@@ -120,6 +168,10 @@ impl AccountsDb {
             accounts,
             slot_state: SlotState::new(0, 0, 0),
         }
+    }
+
+    pub fn force_flush(&self, slot: Slot) {
+        self.accounts.accounts_db.flush_accounts_cache(true, Some(slot))
     }
 }
 
