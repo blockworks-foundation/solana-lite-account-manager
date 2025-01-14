@@ -4,7 +4,10 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use clap::Parser;
-use log::info;
+use lite_account_manager_common::account_data::AccountData;
+use log::{debug, info, trace, warn};
+use solana_accounts_db::storable_accounts::{AccountForStorage, StorableAccounts};
+use solana_sdk::clock::Slot;
 
 use lite_account_manager_common::account_store_interface::AccountStorageInterface;
 use lite_account_storage::accountsdb::AccountsDb;
@@ -40,32 +43,58 @@ pub async fn main() {
     let accounts_path = PathBuf::from_str(&accounts_path).unwrap();
     let account_index_path = PathBuf::from_str(&account_index_path).unwrap();
 
-    assert!(accounts_path.is_dir(), "accounts_path must exist and must be a directory");
-    assert!(account_index_path.is_dir(), "account_index_path must exist and must be a directory");
+    assert!(
+        accounts_path.is_dir(),
+        "accounts_path must exist and must be a directory"
+    );
+    assert!(
+        account_index_path.is_dir(),
+        "account_index_path must exist and must be a directory"
+    );
 
-
-    let db = Arc::new(
-        AccountsDb::new_with_account_paths(
-            vec![accounts_path],
-            vec![account_index_path],
-        ));
+    let db = Arc::new(AccountsDb::new_with_account_paths(
+        vec![accounts_path],
+        vec![account_index_path],
+    ));
 
     info!("Start importing accounts from full snapshot...");
     let started_at = Instant::now();
     let mut processed_accounts = 0;
     let (mut accounts_rx, _) =
         import_archive(PathBuf::from_str(&snapshot_archive_path).unwrap()).await;
-    while let Some(account) = accounts_rx.recv().await {
+    let mut batch = Vec::with_capacity(1024);
+    let mut last_slot = 0;
+    'accounts_loop: while let Some(account) = accounts_rx.recv().await {
         let slot = account.updated_slot;
-        db.initialize_or_update_account(account);
-        processed_accounts += 1;
+        let slot_changed = {
+            let changed = slot != last_slot;
+            last_slot = slot;
+            changed
+        };
 
+        if !slot_changed {
+            batch.push(account);
 
-        if processed_accounts % 100_000 == 0 {
-            info!("Flushing at {} processed accounts", processed_accounts);
-            db.force_flush(slot);
+            if batch.len() >= 1024 {
+                trace!("Flushing full batch of {} accounts", batch.len());
+                db.initialize_or_update_accounts(slot, &batch);
+                batch.clear();
+            }
+        } else {
+            trace!("Flushing batch on slot change of {} accounts", batch.len());
+            db.initialize_or_update_accounts(slot, &batch);
+            batch.clear();
+            batch.push(account);
         }
+
+        // if processed_accounts % 100_000 == 0 {
+        //     info!("Flushing at {} processed accounts", processed_accounts);
+        //     db.force_flush(slot);
+        // }
     }
+
+    // TODO we lose the unflushed data
+    warn!("NOT Flushing last batch of {} accounts", batch.len());
 
     info!(
         "Importing accounts from full snapshot took {:?}",

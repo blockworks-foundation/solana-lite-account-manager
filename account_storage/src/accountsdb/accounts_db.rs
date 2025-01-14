@@ -55,7 +55,7 @@ pub const ACCOUNTS_DB_CONFIG: AccountsDbConfig = AccountsDbConfig {
     storage_access: StorageAccess::Mmap,
 };
 
-fn create_accounts_db_config(account_index_paths: Vec<PathBuf>) -> AccountsDbConfig{
+fn create_accounts_db_config(account_index_paths: Vec<PathBuf>) -> AccountsDbConfig {
     let account_index_config = AccountsIndexConfig {
         bins: Some(BINS),
         flush_threads: Some(FLUSH_THREADS),
@@ -143,7 +143,10 @@ impl AccountsDb {
     }
 
     #[allow(clippy::new_without_default)]
-    pub fn new_with_account_paths(account_paths: Vec<PathBuf>, account_index_paths: Vec<PathBuf>) -> Self {
+    pub fn new_with_account_paths(
+        account_paths: Vec<PathBuf>,
+        account_index_paths: Vec<PathBuf>,
+    ) -> Self {
         let db = SolanaAccountsDb::new_with_config(
             account_paths,
             &ClusterType::MainnetBeta,
@@ -171,7 +174,25 @@ impl AccountsDb {
     }
 
     pub fn force_flush(&self, slot: Slot) {
-        self.accounts.accounts_db.flush_accounts_cache(true, Some(slot))
+        self.accounts
+            .accounts_db
+            .flush_accounts_cache(true, Some(slot))
+    }
+
+    pub fn initialize_or_update_accounts(&self, target_slot: Slot, account_data: &[AccountData]) {
+        let batch: Vec<(Pubkey, AccountSharedData)> = account_data
+            .iter()
+            .map(|account_data| {
+                let shared_data = AccountSharedData::from(account_data.account.to_solana_account());
+                (account_data.pubkey, shared_data)
+            })
+            .collect();
+
+        let ref_batch = batch.iter().map(|(pk, ad)| (pk, ad)).collect::<Vec<_>>();
+
+        // let account_to_store = [(&account_data.pubkey, &shared_data)];
+        self.accounts
+            .store_accounts_cached((target_slot, ref_batch.as_slice()));
     }
 }
 
