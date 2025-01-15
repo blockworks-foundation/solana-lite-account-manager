@@ -1,9 +1,10 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use log::{error, trace, warn};
+use log::{error, info, trace, warn};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
+use itertools::Itertools;
 
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Receiver;
@@ -15,6 +16,7 @@ use lite_account_manager_common::account_data::{Account, AccountData, Data};
 use crate::archived::ArchiveSnapshotExtractor;
 use crate::core::{append_vec_iter, SnapshotExtractor};
 
+// note: slots are NOT ordered
 pub async fn import_archive(archive_path: PathBuf) -> (Receiver<AccountData>, JoinHandle<()>) {
     let (tx, rx) = mpsc::channel::<AccountData>(10_000);
 
@@ -26,6 +28,11 @@ pub async fn import_archive(archive_path: PathBuf) -> (Receiver<AccountData>, Jo
 
         let started_at = Instant::now();
         let mut cnt_append_vecs: u32 = 0;
+
+        // for append_vec in extractor.iter().flatten()
+        //     .sorted_unstable_by_key(|av| av.slot()) {
+        //     let tx = tx.clone();
+
 
         for append_vec in extractor.iter() {
             let tx = tx.clone();
