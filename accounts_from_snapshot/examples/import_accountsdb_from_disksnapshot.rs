@@ -57,7 +57,9 @@ pub async fn main() {
         vec![account_index_path],
     ));
 
-    info!("Start importing accounts from full snapshot...");
+    let raydium_program_id = solana_sdk::pubkey::Pubkey::from_str("675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8").unwrap();
+
+    info!("Start importing accounts from full snapshot filtering program {}...", raydium_program_id);
     let started_at = Instant::now();
     let mut processed_accounts = 0;
     let (mut accounts_rx, _) =
@@ -65,6 +67,13 @@ pub async fn main() {
     let mut batch = Vec::with_capacity(1024);
     let mut last_slot = 0;
     'accounts_loop: while let Some(account) = accounts_rx.recv().await {
+
+        if account.account.owner != raydium_program_id {
+            continue 'accounts_loop;
+        }
+
+        processed_accounts += 1;
+
         let slot = account.updated_slot;
         let slot_changed = {
             let changed = slot != last_slot;
@@ -87,10 +96,10 @@ pub async fn main() {
             batch.push(account);
         }
 
-        // if processed_accounts % 100_000 == 0 {
-        //     info!("Flushing at {} processed accounts", processed_accounts);
-        //     db.force_flush(slot);
-        // }
+        if processed_accounts % 1_000 == 0 {
+            info!("Flushing at {} processed accounts", processed_accounts);
+            db.force_flush(slot);
+        }
     }
 
     // TODO we lose the unflushed data
