@@ -8,10 +8,9 @@ use log::info;
 use solana_accounts_db::accounts_file::StorageAccess;
 use solana_runtime::snapshot_archive_info::{FullSnapshotArchiveInfo, SnapshotArchiveInfo};
 use solana_runtime::snapshot_utils::{
-    ArchiveFormat, BankSnapshotInfo, BankSnapshotKind,
-    rebuild_storages_from_snapshot_dir, SnapshotVersion, UnarchivedSnapshot, verify_and_unarchive_snapshots,
+    rebuild_storages_from_snapshot_dir, verify_and_unarchive_snapshots, ArchiveFormat,
+    BankSnapshotInfo, BankSnapshotKind, SnapshotVersion, UnarchivedSnapshot,
 };
-
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
