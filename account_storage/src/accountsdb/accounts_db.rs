@@ -173,10 +173,30 @@ impl AccountsDb {
         }
     }
 
+    pub fn flush_accounts_cache_if_needed(&self, slot: Slot) {
+        self.accounts
+            .accounts_db
+            .flush_accounts_cache(false, Some(slot))
+    }
+
     pub fn force_flush(&self, slot: Slot) {
         self.accounts
             .accounts_db
             .flush_accounts_cache(true, Some(slot))
+    }
+
+    // don't know what this is doing
+    pub fn freeze_slot(&self, slot: Slot) {
+        // see run_test_flush_accounts_cache_if_needed
+        self.accounts.accounts_db.mark_slot_frozen(slot);
+        // if i < num_roots {
+        self.accounts.accounts_db.add_root(slot);
+        // }
+
+        // note: this is supposed to be done by background thread
+        // self.accounts
+        //     .accounts_db
+        //     .flush_accounts_cache(true, Some(slot))
     }
 
     pub fn initialize_or_update_accounts(&self, target_slot: Slot, account_data: &[AccountData]) {
@@ -190,7 +210,6 @@ impl AccountsDb {
 
         let ref_batch = batch.iter().map(|(pk, ad)| (pk, ad)).collect::<Vec<_>>();
 
-        // let account_to_store = [(&account_data.pubkey, &shared_data)];
         self.accounts
             .store_accounts_cached((target_slot, ref_batch.as_slice()));
     }

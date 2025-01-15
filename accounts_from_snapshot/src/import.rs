@@ -1,10 +1,10 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+use itertools::Itertools;
 use log::{error, info, trace, warn};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
-use itertools::Itertools;
 
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Receiver;
@@ -28,11 +28,6 @@ pub async fn import_archive(archive_path: PathBuf) -> (Receiver<AccountData>, Jo
 
         let started_at = Instant::now();
         let mut cnt_append_vecs: u32 = 0;
-
-        // for append_vec in extractor.iter().flatten()
-        //     .sorted_unstable_by_key(|av| av.slot()) {
-        //     let tx = tx.clone();
-
 
         for append_vec in extractor.iter() {
             let tx = tx.clone();

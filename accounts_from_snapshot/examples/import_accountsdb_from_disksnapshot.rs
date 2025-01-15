@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use clap::Parser;
 use lite_account_manager_common::account_data::AccountData;
@@ -11,6 +11,7 @@ use solana_sdk::clock::Slot;
 
 use lite_account_manager_common::account_store_interface::AccountStorageInterface;
 use lite_account_storage::accountsdb::AccountsDb;
+use lite_accounts_from_snapshot::debouncer_instant;
 use lite_accounts_from_snapshot::import::import_archive;
 
 #[derive(Parser, Debug)]
@@ -57,20 +58,26 @@ pub async fn main() {
         vec![account_index_path],
     ));
 
-    let raydium_program_id = solana_sdk::pubkey::Pubkey::from_str("675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8").unwrap();
+    let raydium_program_id =
+        solana_sdk::pubkey::Pubkey::from_str("675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8")
+            .unwrap();
 
-    info!("Start importing accounts from full snapshot filtering program {}...", raydium_program_id);
+    info!(
+        "Start importing accounts from full snapshot filtering program {}...",
+        raydium_program_id
+    );
     let started_at = Instant::now();
+    let flush_debouncer = debouncer_instant::Debouncer::new(Duration::from_millis(100));
     let mut processed_accounts = 0;
     let (mut accounts_rx, _) =
         import_archive(PathBuf::from_str(&snapshot_archive_path).unwrap()).await;
     let mut batch = Vec::with_capacity(1024);
     let mut last_slot = 0;
+    let mut highest_slot = 0;
     'accounts_loop: while let Some(account) = accounts_rx.recv().await {
-
-        if account.account.owner != raydium_program_id {
-            continue 'accounts_loop;
-        }
+        // if account.account.owner != raydium_program_id {
+        //     continue 'accounts_loop;
+        // }
 
         processed_accounts += 1;
 
@@ -80,6 +87,20 @@ pub async fn main() {
             last_slot = slot;
             changed
         };
+
+        let highest_slot_changed = {
+            if slot > highest_slot {
+                highest_slot = slot;
+                true
+            } else {
+                false
+            }
+        };
+
+        if highest_slot_changed {
+            info!("Freezing slot {}", slot);
+            db.freeze_slot(slot);
+        }
 
         if !slot_changed {
             batch.push(account);
@@ -96,9 +117,15 @@ pub async fn main() {
             batch.push(account);
         }
 
-        if processed_accounts % 1_000 == 0 {
-            info!("Flushing at {} processed accounts", processed_accounts);
-            db.force_flush(slot);
+        if processed_accounts % 100_000 == 0 {
+            info!("Processed {} accounts so far", processed_accounts);
+        }
+
+        if flush_debouncer.can_fire() {
+            info!("Flushing accounts cache");
+            // this is done by background job in validators
+            // db.flush_accounts_cache_if_needed(slot);
+            db.force_flush(slot)
         }
     }
 
