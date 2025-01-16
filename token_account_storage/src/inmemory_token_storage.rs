@@ -596,7 +596,7 @@ impl TokenProgramAccountsStorage {
                                             mint_pubkey: mint_account.pubkey,
                                         },
                                     ));
-                                    if mints.contains_key(&mint_account.pubkey) {
+                                    if !mints.contains_key(&mint_account.pubkey) {
                                         mints.insert(mint_account.pubkey, mint_account.clone());
                                     }
                                 }
