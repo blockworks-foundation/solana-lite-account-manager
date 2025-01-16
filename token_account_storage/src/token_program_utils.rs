@@ -13,6 +13,7 @@ use itertools::Itertools;
 use lite_account_manager_common::{
     account_data::{Account, AccountData},
     account_filter::{AccountFilterType, MemcmpFilter, MemcmpFilterData},
+    account_store_interface::TokenProgramType,
 };
 use solana_sdk::{
     program_option::COption,
@@ -56,24 +57,6 @@ pub fn get_or_create_mint_index(
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum SplTokenProgram {
-    TokenProgram,
-    Token2022Program,
-}
-
-impl TryFrom<&Pubkey> for SplTokenProgram {
-    type Error = ();
-
-    fn try_from(pubkey: &Pubkey) -> Result<Self, Self::Error> {
-        match *pubkey {
-            spl_token::ID => Ok(SplTokenProgram::TokenProgram),
-            spl_token_2022::ID => Ok(SplTokenProgram::Token2022Program),
-            _ => Err(()),
-        }
-    }
-}
-
 // this enum covers old and new (2022) accounts
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum AccountType {
@@ -83,12 +66,12 @@ enum AccountType {
 }
 
 fn get_spl_account_type(
-    token_program: SplTokenProgram,
+    token_program_type: TokenProgramType,
     account_data_len: usize,
     byte_after_account_len: Option<u8>,
 ) -> anyhow::Result<(AccountType, bool)> {
-    match token_program {
-        SplTokenProgram::Token2022Program => {
+    match token_program_type {
+        TokenProgramType::Token2022Program => {
             if account_data_len == spl_token_2022::state::Mint::LEN {
                 Ok((AccountType::Mint, false))
             } else if account_data_len == spl_token_2022::state::Account::LEN {
@@ -118,7 +101,7 @@ fn get_spl_account_type(
                 bail!("unknown token account")
             }
         }
-        SplTokenProgram::TokenProgram => {
+        TokenProgramType::TokenProgram => {
             if account_data_len == spl_token::state::Mint::LEN {
                 Ok((AccountType::Mint, false))
             } else if account_data_len == spl_token::state::Account::LEN {
@@ -142,14 +125,14 @@ pub fn get_token_program_account_type(
         return Ok(TokenProgramAccountType::Deleted(account_data.pubkey));
     }
 
-    let token_program: SplTokenProgram = match (&account_data.account.owner).try_into() {
+    let token_program_type: TokenProgramType = match (&account_data.account.owner).try_into() {
         Ok(token_program) => token_program,
         Err(_) => return Ok(TokenProgramAccountType::Deleted(account_data.pubkey)),
     };
 
     let packed_data = account_data.account.data.data();
 
-    let byte_after_account_len = if token_program == SplTokenProgram::Token2022Program
+    let byte_after_account_len = if token_program_type == TokenProgramType::Token2022Program
         && packed_data.len() > spl_token_2022::state::Account::LEN
     {
         packed_data
@@ -160,13 +143,13 @@ pub fn get_token_program_account_type(
     };
 
     let (account_type, has_additional_data) = get_spl_account_type(
-        token_program.clone(),
+        token_program_type.clone(),
         packed_data.len(),
         byte_after_account_len,
     )?;
 
-    match token_program {
-        SplTokenProgram::Token2022Program => {
+    match token_program_type {
+        TokenProgramType::Token2022Program => {
             match account_type {
                 AccountType::Mint => {
                     //mint
@@ -246,7 +229,7 @@ pub fn get_token_program_account_type(
                 }
             }
         }
-        SplTokenProgram::TokenProgram => {
+        TokenProgramType::TokenProgram => {
             match account_type {
                 AccountType::Mint => {
                     let mint =
@@ -573,21 +556,16 @@ pub struct AccountFilter {
 }
 
 pub fn get_token_program_account_filter(
-    program_id: &Pubkey,
+    token_program_type: TokenProgramType,
     filters: &[AccountFilterType],
 ) -> TokenProgramAccountFilter {
-    let token_program: SplTokenProgram = match program_id.try_into() {
-        Ok(token_program) => token_program,
-        Err(_) => return TokenProgramAccountFilter::NoFilter,
-    };
-
     let mut data_size_filter: OnceCell<u64> = OnceCell::new();
     let mut memcmp_filters: Vec<(u64, &[u8])> = vec![];
 
     for filter in filters {
         match filter {
             AccountFilterType::DataSize(size) => {
-                if let Err(_) = data_size_filter.set(*size) {
+                if data_size_filter.set(*size).is_err() {
                     log::error!("Multiple data size filters provided");
                     return TokenProgramAccountFilter::FilterError;
                 }
@@ -602,17 +580,17 @@ pub fn get_token_program_account_filter(
         }
     }
 
-    let byte_after_account_len = (token_program == SplTokenProgram::Token2022Program)
+    let byte_after_account_len = (token_program_type == TokenProgramType::Token2022Program)
         .then(|| {
             memcmp_filters
                 .iter()
                 .find(|(offset, _)| *offset == spl_token_2022::state::Account::LEN as u64)
-                .and_then(|(_, bytes)| bytes.get(0).copied())
+                .and_then(|(_, bytes)| bytes.first().copied())
         })
         .flatten();
 
     let account_type = get_spl_account_type(
-        token_program.clone(),
+        token_program_type.clone(),
         data_size_filter.take().unwrap_or_default() as usize,
         byte_after_account_len,
     );
@@ -693,8 +671,9 @@ pub fn get_token_program_account_filter(
 #[cfg(test)]
 mod test {
     mod get_token_program_account_filter {
-        use lite_account_manager_common::account_filter::{
-            AccountFilterType, MemcmpFilter, MemcmpFilterData,
+        use lite_account_manager_common::{
+            account_filter::{AccountFilterType, MemcmpFilter, MemcmpFilterData},
+            account_store_interface::TokenProgramType,
         };
         use solana_sdk::program_pack::Pack;
 
@@ -703,23 +682,13 @@ mod test {
         };
 
         #[test]
-        fn test_filter_for_non_token_program() {
-            let filters = vec![AccountFilterType::DataSize(
-                spl_token_2022::state::Mint::LEN as u64,
-            )];
-            let filter =
-                get_token_program_account_filter(&solana_sdk::pubkey::new_rand(), &filters);
-
-            assert_eq!(filter, TokenProgramAccountFilter::NoFilter);
-        }
-
-        #[test]
         fn test_filter_for_multiple_data_sizes() {
             let filters = vec![
                 AccountFilterType::DataSize(spl_token_2022::state::Mint::LEN as u64),
                 AccountFilterType::DataSize(spl_token_2022::state::Mint::LEN as u64),
             ];
-            let filter = get_token_program_account_filter(&spl_token_2022::ID, &filters);
+            let filter =
+                get_token_program_account_filter(TokenProgramType::Token2022Program, &filters);
 
             assert_eq!(filter, TokenProgramAccountFilter::FilterError);
         }
@@ -743,7 +712,7 @@ mod test {
                 }),
             ];
 
-            let filter = get_token_program_account_filter(&spl_token::ID, &filters);
+            let filter = get_token_program_account_filter(TokenProgramType::TokenProgram, &filters);
 
             assert_eq!(filter, TokenProgramAccountFilter::FilterError);
 
@@ -758,7 +727,7 @@ mod test {
                 }),
             ];
 
-            let filter = get_token_program_account_filter(&spl_token::ID, &filters);
+            let filter = get_token_program_account_filter(TokenProgramType::TokenProgram, &filters);
 
             assert_eq!(filter, TokenProgramAccountFilter::FilterError);
 
@@ -779,7 +748,7 @@ mod test {
                 }),
             ];
 
-            let filter = get_token_program_account_filter(&spl_token::ID, &filters);
+            let filter = get_token_program_account_filter(TokenProgramType::TokenProgram, &filters);
 
             assert_eq!(filter, TokenProgramAccountFilter::FilterError);
 
@@ -794,7 +763,7 @@ mod test {
                 }),
             ];
 
-            let filter = get_token_program_account_filter(&spl_token::ID, &filters);
+            let filter = get_token_program_account_filter(TokenProgramType::TokenProgram, &filters);
 
             assert_eq!(filter, TokenProgramAccountFilter::FilterError);
         }
@@ -802,8 +771,7 @@ mod test {
         #[test]
         fn test_filter_without_data_size() {
             let filters = vec![];
-            let filter =
-                get_token_program_account_filter(&solana_sdk::pubkey::new_rand(), &filters);
+            let filter = get_token_program_account_filter(TokenProgramType::TokenProgram, &filters);
 
             assert_eq!(filter, TokenProgramAccountFilter::NoFilter);
         }
@@ -813,14 +781,15 @@ mod test {
             let filters = vec![AccountFilterType::DataSize(
                 spl_token::state::Mint::LEN as u64,
             )];
-            let filter = get_token_program_account_filter(&spl_token::ID, &filters);
+            let filter = get_token_program_account_filter(TokenProgramType::TokenProgram, &filters);
 
             assert_eq!(filter, TokenProgramAccountFilter::MintFilter);
 
             let filters = vec![AccountFilterType::DataSize(
                 spl_token_2022::state::Mint::LEN as u64,
             )];
-            let filter = get_token_program_account_filter(&spl_token_2022::ID, &filters);
+            let filter =
+                get_token_program_account_filter(TokenProgramType::Token2022Program, &filters);
 
             assert_eq!(filter, TokenProgramAccountFilter::MintFilter);
         }
@@ -830,14 +799,15 @@ mod test {
             let filters = vec![AccountFilterType::DataSize(
                 spl_token::state::Multisig::LEN as u64,
             )];
-            let filter = get_token_program_account_filter(&spl_token::ID, &filters);
+            let filter = get_token_program_account_filter(TokenProgramType::TokenProgram, &filters);
 
             assert_eq!(filter, TokenProgramAccountFilter::MultisigFilter);
 
             let filters = vec![AccountFilterType::DataSize(
                 spl_token_2022::state::Multisig::LEN as u64,
             )];
-            let filter = get_token_program_account_filter(&spl_token_2022::ID, &filters);
+            let filter =
+                get_token_program_account_filter(TokenProgramType::Token2022Program, &filters);
 
             assert_eq!(filter, TokenProgramAccountFilter::MultisigFilter);
         }
@@ -848,7 +818,7 @@ mod test {
 
             // filter only by token accounts
             let filters = vec![AccountFilterType::DataSize(data_size)];
-            let filter = get_token_program_account_filter(&spl_token::ID, &filters);
+            let filter = get_token_program_account_filter(TokenProgramType::TokenProgram, &filters);
 
             assert_eq!(
                 filter,
@@ -867,7 +837,7 @@ mod test {
                     data: MemcmpFilterData::Bytes(mint_pubkey.to_bytes().to_vec()),
                 }),
             ];
-            let filter = get_token_program_account_filter(&spl_token::ID, &filters);
+            let filter = get_token_program_account_filter(TokenProgramType::TokenProgram, &filters);
 
             assert_eq!(
                 filter,
@@ -886,7 +856,7 @@ mod test {
                     data: MemcmpFilterData::Bytes(owner_pubkey.to_bytes().to_vec()),
                 }),
             ];
-            let filter = get_token_program_account_filter(&spl_token::ID, &filters);
+            let filter = get_token_program_account_filter(TokenProgramType::TokenProgram, &filters);
 
             assert_eq!(
                 filter,
@@ -910,7 +880,7 @@ mod test {
                     data: MemcmpFilterData::Bytes(owner_pubkey.to_bytes().to_vec()),
                 }),
             ];
-            let filter = get_token_program_account_filter(&spl_token::ID, &filters);
+            let filter = get_token_program_account_filter(TokenProgramType::TokenProgram, &filters);
 
             assert_eq!(
                 filter,
@@ -926,7 +896,8 @@ mod test {
             let data_size = spl_token_2022::state::Account::LEN as u64;
             // filter only by token accounts
             let filters = vec![AccountFilterType::DataSize(data_size)];
-            let filter = get_token_program_account_filter(&spl_token_2022::ID, &filters);
+            let filter =
+                get_token_program_account_filter(TokenProgramType::Token2022Program, &filters);
 
             assert_eq!(
                 filter,
@@ -945,7 +916,8 @@ mod test {
                     data: MemcmpFilterData::Bytes(mint_pubkey.to_bytes().to_vec()),
                 }),
             ];
-            let filter = get_token_program_account_filter(&spl_token_2022::ID, &filters);
+            let filter =
+                get_token_program_account_filter(TokenProgramType::Token2022Program, &filters);
 
             assert_eq!(
                 filter,
@@ -964,7 +936,8 @@ mod test {
                     data: MemcmpFilterData::Bytes(owner_pubkey.to_bytes().to_vec()),
                 }),
             ];
-            let filter = get_token_program_account_filter(&spl_token_2022::ID, &filters);
+            let filter =
+                get_token_program_account_filter(TokenProgramType::Token2022Program, &filters);
 
             assert_eq!(
                 filter,
@@ -988,7 +961,8 @@ mod test {
                     data: MemcmpFilterData::Bytes(owner_pubkey.to_bytes().to_vec()),
                 }),
             ];
-            let filter = get_token_program_account_filter(&spl_token_2022::ID, &filters);
+            let filter =
+                get_token_program_account_filter(TokenProgramType::Token2022Program, &filters);
 
             assert_eq!(
                 filter,
@@ -1005,7 +979,8 @@ mod test {
 
             // filter by token accounts with extensions without specifying the type
             let filters = vec![AccountFilterType::DataSize(data_size)];
-            let filter = get_token_program_account_filter(&spl_token_2022::ID, &filters);
+            let filter =
+                get_token_program_account_filter(TokenProgramType::Token2022Program, &filters);
 
             assert_eq!(filter, TokenProgramAccountFilter::NoFilter);
 
@@ -1019,7 +994,8 @@ mod test {
                     ]),
                 }),
             ];
-            let filter = get_token_program_account_filter(&spl_token_2022::ID, &filters);
+            let filter =
+                get_token_program_account_filter(TokenProgramType::Token2022Program, &filters);
 
             assert_eq!(
                 filter,
@@ -1044,7 +1020,8 @@ mod test {
                     data: MemcmpFilterData::Bytes(mint_pubkey.to_bytes().to_vec()),
                 }),
             ];
-            let filter = get_token_program_account_filter(&spl_token_2022::ID, &filters);
+            let filter =
+                get_token_program_account_filter(TokenProgramType::Token2022Program, &filters);
 
             assert_eq!(
                 filter,
@@ -1069,7 +1046,8 @@ mod test {
                     data: MemcmpFilterData::Bytes(owner_pubkey.to_bytes().to_vec()),
                 }),
             ];
-            let filter = get_token_program_account_filter(&spl_token_2022::ID, &filters);
+            let filter =
+                get_token_program_account_filter(TokenProgramType::Token2022Program, &filters);
 
             assert_eq!(
                 filter,
@@ -1099,7 +1077,8 @@ mod test {
                     data: MemcmpFilterData::Bytes(owner_pubkey.to_bytes().to_vec()),
                 }),
             ];
-            let filter = get_token_program_account_filter(&spl_token_2022::ID, &filters);
+            let filter =
+                get_token_program_account_filter(TokenProgramType::Token2022Program, &filters);
 
             assert_eq!(
                 filter,

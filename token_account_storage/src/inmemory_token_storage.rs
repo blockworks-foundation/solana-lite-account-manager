@@ -11,14 +11,17 @@ use itertools::Itertools;
 use lite_account_manager_common::{
     account_data::AccountData,
     account_filter::AccountFilterType,
-    account_store_interface::{AccountLoadingError, AccountStorageInterface},
+    account_store_interface::{
+        AccountLoadingError, AccountStorageInterface, Mint, ProgramAccountStorageInterface,
+        TokenProgramAccountData, TokenProgramTokenAccountData, TokenProgramType,
+    },
     commitment::Commitment,
     pubkey_container_utils::PartialPubkey,
     slot_info::SlotInfo,
 };
 use prometheus::{opts, register_int_gauge, IntGauge};
 use serde::{Deserialize, Serialize};
-use solana_sdk::{clock::Slot, pubkey::Pubkey};
+use solana_sdk::{clock::Slot, program_pack::Pack, pubkey::Pubkey};
 
 use crate::{
     account_types::{MintAccount, MintIndex, MultiSig, Program, TokenAccount, TokenAccountIndex},
@@ -446,21 +449,17 @@ impl TokenProgramAccountsStorage {
 
     pub fn get_program_accounts_finalized(
         &self,
-        program_pubkey: Pubkey,
-        account_filters: Option<Vec<AccountFilterType>>,
-    ) -> Result<Vec<AccountData>, AccountLoadingError> {
-        let account_filters =
-            account_filters.ok_or(AccountLoadingError::ShouldContainAnAccountFilter)?;
-
-        let program = match program_pubkey {
-            spl_token::ID => Ok(Program::TokenProgram),
-            spl_token_2022::ID => Ok(Program::Token2022Program),
-            _ => Err(AccountLoadingError::WrongIndex),
-        }?;
+        program_type: TokenProgramType,
+        account_filters: &Option<Vec<AccountFilterType>>,
+    ) -> Result<(Vec<TokenProgramAccountData>, HashMap<Pubkey, MintAccount>), AccountLoadingError>
+    {
+        let account_filters: &Vec<AccountFilterType> = (account_filters
+            .as_ref()
+            .ok_or(AccountLoadingError::ShouldContainAnAccountFilter))?;
 
         let finalized_slot = self.finalized_slot.load(Ordering::Relaxed);
         let token_program_account_filter =
-            get_token_program_account_filter(&program_pubkey, &account_filters);
+            get_token_program_account_filter(program_type.clone(), account_filters);
 
         match token_program_account_filter {
             TokenProgramAccountFilter::FilterError => {
@@ -483,7 +482,9 @@ impl TokenProgramAccountsStorage {
 
                     match indexes {
                         Some(indexes) => {
-                            let token_accounts = self
+                            let mut mints: HashMap<Pubkey, MintAccount> = HashMap::new();
+                            let mut accounts: Vec<TokenProgramAccountData> = vec![];
+                            for token_account in self
                                 .token_accounts_storage
                                 .get_by_index(indexes)?
                                 .iter()
@@ -495,6 +496,54 @@ impl TokenProgramAccountsStorage {
                                         acc.owner == owner
                                     }
                                 })
+                            {
+                                if let Some(account_data) = token_account_to_solana_account(
+                                    token_account,
+                                    finalized_slot,
+                                    0,
+                                    &self.mints_by_index,
+                                ) {
+                                    let mint_account_ref =
+                                        self.mints_by_index.get(&token_account.mint).expect("Mint must exist when a token account for a mint exists");
+                                    let mint_account = mint_account_ref.value();
+                                    accounts.push(TokenProgramAccountData::TokenAccount(
+                                        TokenProgramTokenAccountData {
+                                            account_data,
+                                            mint_pubkey: mint_account.pubkey,
+                                        },
+                                    ));
+                                    if mints.contains_key(&mint_account.pubkey) {
+                                        mints.insert(mint_account.pubkey, mint_account.clone());
+                                    }
+                                }
+                            }
+
+                            Ok((accounts, mints))
+                        }
+                        None => Ok((vec![], HashMap::with_capacity(0))),
+                    }
+                } else if let Some(mint) = mint_filter {
+                    // filter token accounts by mint
+                    match self
+                        .mints_index_by_pubkey
+                        .get(&mint)
+                        .and_then(|mint_index| self.accounts_index_by_mint.get(mint_index.value()))
+                    {
+                        Some(token_acc_indexes) => {
+                            let indexes: HashSet<u32> =
+                                token_acc_indexes.value().iter().cloned().collect();
+
+                            let mint_account = self
+                                .mints_index_by_pubkey
+                                .get(&mint)
+                                .and_then(|mint_index| self.mints_by_index.get(&mint_index))
+                                .map(|mint_account| mint_account.value().clone())
+                                .expect("Mint must exist when an account index by mint entry exists for a mint");
+
+                            let token_accounts = self
+                                .token_accounts_storage
+                                .get_by_index(indexes)?
+                                .iter()
                                 .filter_map(|token_account| {
                                     token_account_to_solana_account(
                                         token_account,
@@ -503,38 +552,22 @@ impl TokenProgramAccountsStorage {
                                         &self.mints_by_index,
                                     )
                                 })
+                                .map(|account_data| {
+                                    TokenProgramAccountData::TokenAccount(
+                                        TokenProgramTokenAccountData {
+                                            account_data,
+                                            mint_pubkey: mint_account.pubkey,
+                                        },
+                                    )
+                                })
                                 .collect_vec();
-                            Ok(token_accounts)
+
+                            let mut mints: HashMap<Pubkey, MintAccount> = HashMap::with_capacity(1);
+                            mints.insert(mint_account.pubkey, mint_account);
+
+                            Ok((token_accounts, mints))
                         }
-                        None => Ok(vec![]),
-                    }
-                } else if let Some(mint) = mint_filter {
-                    // filter token accounts by mint
-                    match self.mints_index_by_pubkey.get(&mint) {
-                        Some(mint_index) => {
-                            match self.accounts_index_by_mint.get(mint_index.value()) {
-                                Some(token_acc_indexes) => {
-                                    let indexes: HashSet<u32> =
-                                        token_acc_indexes.value().iter().cloned().collect();
-                                    let token_accounts = self
-                                        .token_accounts_storage
-                                        .get_by_index(indexes)?
-                                        .iter()
-                                        .filter_map(|token_account| {
-                                            token_account_to_solana_account(
-                                                token_account,
-                                                finalized_slot,
-                                                0,
-                                                &self.mints_by_index,
-                                            )
-                                        })
-                                        .collect_vec();
-                                    Ok(token_accounts)
-                                }
-                                None => Ok(vec![]),
-                            }
-                        }
-                        None => Ok(vec![]),
+                        None => Ok((vec![], HashMap::with_capacity(0))),
                     }
                 } else {
                     Err(AccountLoadingError::ShouldContainAnAccountFilter)
@@ -544,7 +577,9 @@ impl TokenProgramAccountsStorage {
                 let mints = self
                     .mints_by_index
                     .iter()
-                    .filter(|mint_account_entry| mint_account_entry.value().program == program)
+                    .filter(|mint_account_entry| {
+                        mint_account_entry.value().program == program_type.clone().into()
+                    })
                     .map(|mint_account_entry| {
                         token_mint_to_solana_account(mint_account_entry.value(), finalized_slot, 0)
                     })
@@ -553,15 +588,16 @@ impl TokenProgramAccountsStorage {
                             .iter()
                             .all(|filter| filter.allows(&account.account.data.data()))
                     })
+                    .map(TokenProgramAccountData::OtherAccount)
                     .collect_vec();
-                Ok(mints)
+                Ok((mints, HashMap::with_capacity(0)))
             }
             TokenProgramAccountFilter::MultisigFilter => {
                 let multisigs = self
                     .multisigs
                     .iter()
                     .filter(|multisig_account_entry| {
-                        multisig_account_entry.value().program == program
+                        multisig_account_entry.value().program == program_type.clone().into()
                     })
                     .map(|multisig_account_entry| {
                         token_multisig_to_solana_account(
@@ -576,13 +612,63 @@ impl TokenProgramAccountsStorage {
                             .iter()
                             .all(|filter| filter.allows(&account.account.data.data()))
                     })
+                    .map(TokenProgramAccountData::OtherAccount)
                     .collect_vec();
-                Ok(multisigs)
+                Ok((multisigs, HashMap::with_capacity(0)))
             }
             TokenProgramAccountFilter::NoFilter => {
                 Err(AccountLoadingError::ShouldContainAnAccountFilter)
             }
         }
+    }
+
+    fn get_program_accounts_by_commitment(
+        &self,
+        program_pubkey: Pubkey,
+        account_filters: &Option<Vec<AccountFilterType>>,
+        commitment: Commitment,
+    ) -> Result<(Vec<TokenProgramAccountData>, HashMap<Pubkey, MintAccount>), AccountLoadingError>
+    {
+        let program_type = TokenProgramType::try_from(&program_pubkey)
+            .map_err(|_| AccountLoadingError::WrongIndex)?;
+        // get all accounts for finalized commitment and update them if necessary
+        let (mut account_data, mints_for_token_accounts) =
+            self.get_program_accounts_finalized(program_type, account_filters)?;
+        let confirmed_slot = self.confirmed_slot.load(Ordering::Relaxed);
+        if commitment == Commitment::Processed || commitment == Commitment::Confirmed {
+            // get list of all pks to search
+            let pks = account_data.iter().map(|x| x.pubkey).collect_vec();
+            let processed_accounts =
+                self.processed_storage
+                    .get_accounts(pks, commitment, confirmed_slot);
+            let mut to_remove = vec![];
+            for (index, processed_account) in processed_accounts.iter().enumerate() {
+                if let Some((processed_account, slot)) = processed_account {
+                    let updated_account = token_program_account_to_solana_account(
+                        &processed_account.processed_account,
+                        *slot,
+                        processed_account.write_version,
+                        &self.mints_by_index,
+                    );
+
+                    match updated_account {
+                        Some(updated_account) => {
+                            // update with processed or confirmed account state
+                            **account_data.get_mut(index).unwrap() = updated_account;
+                        }
+                        None => {
+                            // account must have been deleted
+                            to_remove.push(index);
+                        }
+                    }
+                }
+            }
+
+            for index in to_remove.iter().rev() {
+                account_data.remove(*index);
+            }
+        }
+        Ok((account_data, mints_for_token_accounts))
     }
 }
 
@@ -693,46 +779,13 @@ impl AccountStorageInterface for TokenProgramAccountsStorage {
         account_filters: Option<Vec<AccountFilterType>>,
         commitment: Commitment,
     ) -> Result<Vec<AccountData>, AccountLoadingError> {
-        if program_pubkey != spl_token::id() && program_pubkey != spl_token_2022::id() {
-            return Err(AccountLoadingError::WrongIndex);
-        }
-        // get all accounts for finalized commitment and update them if necessary
-        let mut account_data =
-            self.get_program_accounts_finalized(program_pubkey, account_filters)?;
-        let confirmed_slot = self.confirmed_slot.load(Ordering::Relaxed);
-        if commitment == Commitment::Processed || commitment == Commitment::Confirmed {
-            // get list of all pks to search
-            let pks = account_data.iter().map(|x| x.pubkey).collect_vec();
-            let processed_accounts =
-                self.processed_storage
-                    .get_accounts(pks, commitment, confirmed_slot);
-            let mut to_remove = vec![];
-            for (index, processed_account) in processed_accounts.iter().enumerate() {
-                if let Some((processed_account, slot)) = processed_account {
-                    let updated_account = token_program_account_to_solana_account(
-                        &processed_account.processed_account,
-                        *slot,
-                        processed_account.write_version,
-                        &self.mints_by_index,
-                    );
-                    match updated_account {
-                        Some(updated_account) => {
-                            // update with processed or confirmed account state
-                            *account_data.get_mut(index).unwrap() = updated_account;
-                        }
-                        None => {
-                            // account must have been deleted
-                            to_remove.push(index);
-                        }
-                    }
-                }
-            }
-
-            for index in to_remove.iter().rev() {
-                account_data.remove(*index);
-            }
-        }
-        Ok(account_data)
+        self.get_program_accounts_by_commitment(program_pubkey, &account_filters, commitment)
+            .map(|(account_data, _)| {
+                account_data
+                    .into_iter()
+                    .map(|acc| acc.into_inner())
+                    .collect_vec()
+            })
     }
 
     fn process_slot_data(&self, slot_info: SlotInfo, commitment: Commitment) -> Vec<AccountData> {
@@ -885,5 +938,44 @@ impl AccountStorageInterface for TokenProgramAccountsStorage {
         }
 
         Ok(())
+    }
+}
+
+impl ProgramAccountStorageInterface for TokenProgramAccountsStorage {
+    fn get_program_accounts_with_mints(
+        &self,
+        token_program_type: TokenProgramType,
+        account_filters: Option<Vec<AccountFilterType>>,
+        commitment: Commitment,
+    ) -> Result<(Vec<TokenProgramAccountData>, HashMap<Pubkey, Mint>), AccountLoadingError> {
+        // get all accounts for finalized commitment and update them if necessary
+        let (account_data, mints_for_token_accounts) = self.get_program_accounts_by_commitment(
+            *token_program_type.as_ref(),
+            &account_filters,
+            commitment,
+        )?;
+
+        let mints_for_token_accounts: HashMap<Pubkey, Mint> = mints_for_token_accounts
+            .into_iter()
+            .map(|(pubkey, mint_account)| {
+                let mint_account_data = token_mint_to_solana_account(
+                    &mint_account,
+                    self.finalized_slot.load(Ordering::Relaxed),
+                    0,
+                );
+                let mint = spl_token::state::Mint::unpack_unchecked(
+                    mint_account_data.account.data.data().as_ref(),
+                )
+                .map(Mint::TokenMint)
+                .or(spl_token_2022::state::Mint::unpack_unchecked(
+                    mint_account_data.account.data.data().as_ref(),
+                )
+                .map(Mint::Token2022Mint))
+                .expect("Mint account data must be parsable as token mint");
+                (pubkey, mint)
+            })
+            .collect();
+
+        Ok((account_data, mints_for_token_accounts))
     }
 }

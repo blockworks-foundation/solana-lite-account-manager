@@ -1,3 +1,4 @@
+use lite_account_manager_common::account_store_interface::TokenProgramType;
 use serde::{Deserialize, Serialize};
 use solana_sdk::pubkey::Pubkey;
 
@@ -9,6 +10,15 @@ pub type TokenAccountIndex = u32;
 pub enum Program {
     TokenProgram,
     Token2022Program,
+}
+
+impl From<TokenProgramType> for Program {
+    fn from(value: TokenProgramType) -> Self {
+        match value {
+            TokenProgramType::TokenProgram => Self::TokenProgram,
+            TokenProgramType::Token2022Program => Self::Token2022Program,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

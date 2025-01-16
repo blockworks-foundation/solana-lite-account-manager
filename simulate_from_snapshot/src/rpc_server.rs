@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -8,9 +9,11 @@ use jsonrpsee::server::ServerBuilder;
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use lite_account_manager_common::account_filter::AccountFilterType as AmAccountFilterType;
 use lite_account_manager_common::account_store_interface::{
-    AccountLoadingError, AccountStorageInterface,
+    AccountLoadingError, AccountStorageInterface, Mint, ProgramAccountStorageInterface,
+    TokenProgramAccountData, TokenProgramType,
 };
 use lite_account_manager_common::{account_data::AccountData, commitment::Commitment};
+use solana_account_decoder::parse_account_data::{AccountAdditionalDataV2, SplTokenAdditionalData};
 use solana_account_decoder::{UiAccount, UiAccountEncoding};
 use solana_rpc_client_api::client_error::reqwest::Method;
 use solana_rpc_client_api::{
@@ -43,11 +46,18 @@ pub trait TestRpc {
 
 pub struct RpcServerImpl {
     storage: Arc<dyn AccountStorageInterface>,
+    program_account_storage: Option<Arc<dyn ProgramAccountStorageInterface>>,
 }
 
 impl RpcServerImpl {
-    pub fn new(storage: Arc<dyn AccountStorageInterface>) -> Self {
-        Self { storage }
+    pub fn new(
+        storage: Arc<dyn AccountStorageInterface>,
+        program_account_storage: Option<Arc<dyn ProgramAccountStorageInterface>>,
+    ) -> Self {
+        Self {
+            storage,
+            program_account_storage,
+        }
     }
 
     pub async fn start_serving(
@@ -91,7 +101,9 @@ impl TestRpcServer for RpcServerImpl {
         program_id_str: String,
         config: Option<RpcProgramAccountsConfig>,
     ) -> RpcResult<OptionalContext<Vec<RpcKeyedAccount>>> {
-        let program_id = Pubkey::from_str(&program_id_str)
+        let program_type: TokenProgramType = Pubkey::from_str(&program_id_str)
+            .map_err(|_| ())
+            .and_then(|pubkey| TokenProgramType::try_from(&pubkey))
             .map_err(|_| jsonrpsee::types::error::ErrorCode::InvalidParams)?;
 
         let with_context = config
@@ -107,14 +119,32 @@ impl TestRpcServer for RpcServerImpl {
         let account_filters = config
             .as_ref()
             .and_then(|x| x.filters.as_ref())
-            .map(|filters| filters.iter().map(AmAccountFilterType::from).collect_vec())
-            .unwrap_or_default();
-
+            .map(|filters| filters.iter().map(AmAccountFilterType::from).collect_vec());
         let commitment = Commitment::from(commitment);
 
-        let gpa = self
-            .storage
-            .get_program_accounts(program_id, Some(account_filters), commitment)
+        let (program_accounts, token_account_mints) = self
+            .program_account_storage
+            .as_ref()
+            .map(|storage| {
+                storage.get_program_accounts_with_mints(
+                    program_type.clone(),
+                    account_filters.clone(),
+                    commitment,
+                )
+            })
+            .unwrap_or_else(|| {
+                self.storage
+                    .get_program_accounts(*program_type.as_ref(), account_filters, commitment)
+                    .map(|accounts| {
+                        (
+                            accounts
+                                .into_iter()
+                                .map(TokenProgramAccountData::OtherAccount)
+                                .collect_vec(),
+                            HashMap::with_capacity(0),
+                        )
+                    })
+            })
             .map_err(|e| {
                 log::error!("get_program_accounts: {}", e);
                 match e {
@@ -133,7 +163,10 @@ impl TestRpcServer for RpcServerImpl {
                     _ => jsonrpsee::types::error::ErrorCode::InternalError,
                 }
             })?;
-        log::debug!("get_program_accounts: found {} accounts", gpa.len());
+        log::debug!(
+            "get_program_accounts: found {} accounts",
+            program_accounts.len()
+        );
         let min_context_slot = config
             .as_ref()
             .and_then(|c| {
@@ -145,27 +178,27 @@ impl TestRpcServer for RpcServerImpl {
             })
             .unwrap_or_default();
 
-        let slot = gpa
+        let slot = program_accounts
             .iter()
             .map(|program_account| program_account.updated_slot)
             .max()
             .unwrap_or_default();
-        let acc_config = config.map(|c| c.account_config);
 
-        let rpc_keyed_accounts = gpa
+        let request_account_config = config.map(|c| c.account_config);
+
+        let rpc_keyed_accounts = program_accounts
             .iter()
-            .filter_map(|account_data| {
-                if account_data.updated_slot >= min_context_slot {
-                    Some(RpcKeyedAccount {
-                        pubkey: account_data.pubkey.to_string(),
-                        account: convert_account_data_to_ui_account(
-                            account_data,
-                            acc_config.clone(),
-                        ),
-                    })
-                } else {
-                    None
-                }
+            .filter(|account_data| account_data.updated_slot >= min_context_slot)
+            .map(|account_data| RpcKeyedAccount {
+                pubkey: account_data.pubkey.to_string(),
+                account: convert_account_data_to_ui_account(
+                    account_data,
+                    request_account_config.clone(),
+                    convert_token_program_account_data_to_additional_data(
+                        account_data,
+                        &token_account_mints,
+                    ),
+                ),
             })
             .collect_vec();
 
@@ -208,28 +241,29 @@ impl TestRpcServer for RpcServerImpl {
             .get_account(account_pk, Commitment::from(commitment))
             .map_err(|_| jsonrpsee::types::error::ErrorCode::InternalError)?;
 
-        match acc {
-            Some(acc) => Ok(RpcResponse {
+        Ok(acc
+            .map(|acc| RpcResponse {
                 context: RpcResponseContext {
                     slot: acc.updated_slot,
                     api_version: None,
                 },
-                value: Some(convert_account_data_to_ui_account(&acc, config)),
-            }),
-            None => Ok(RpcResponse {
+                value: Some(convert_account_data_to_ui_account(&acc, config, None)),
+            })
+            .ok_or_else(|| RpcResponse {
                 context: RpcResponseContext {
                     slot: 0,
                     api_version: None,
                 },
                 value: None,
-            }),
-        }
+            })
+            .unwrap_or_else(|res| res))
     }
 }
 
-pub fn convert_account_data_to_ui_account(
+fn convert_account_data_to_ui_account(
     account_data: &AccountData,
     config: Option<RpcAccountInfoConfig>,
+    additional_data: Option<AccountAdditionalDataV2>,
 ) -> UiAccount {
     let encoding = config
         .as_ref()
@@ -240,7 +274,31 @@ pub fn convert_account_data_to_ui_account(
         &account_data.pubkey,
         &account_data.account.to_solana_account(),
         encoding,
-        None,
+        additional_data,
         data_slice,
     )
+}
+
+fn convert_token_program_account_data_to_additional_data(
+    token_program_account_data: &TokenProgramAccountData,
+    token_account_mints: &HashMap<Pubkey, Mint>,
+) -> Option<AccountAdditionalDataV2> {
+    if let TokenProgramAccountData::TokenAccount(token_account) = token_program_account_data {
+        token_account_mints
+            .get(&token_account.mint_pubkey)
+            .map(|mint| {
+                let decimals = match mint {
+                    Mint::TokenMint(mint) => mint.decimals,
+                    Mint::Token2022Mint(mint) => mint.decimals,
+                };
+                AccountAdditionalDataV2 {
+                    spl_token_additional_data: Some(SplTokenAdditionalData {
+                        decimals,
+                        ..Default::default()
+                    }),
+                }
+            })
+    } else {
+        None
+    }
 }
