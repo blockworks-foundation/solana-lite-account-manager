@@ -21,7 +21,7 @@ use lite_account_manager_common::{
 };
 use prometheus::{opts, register_int_gauge, IntGauge};
 use serde::{Deserialize, Serialize};
-use solana_sdk::{clock::Slot, program_pack::Pack, pubkey::Pubkey};
+use solana_sdk::{clock::Slot, pubkey::Pubkey};
 
 use crate::{
     account_types::{MintAccount, MintIndex, MultiSig, Program, TokenAccount, TokenAccountIndex},
@@ -29,8 +29,9 @@ use crate::{
     token_program_utils::{
         get_token_program_account_filter, get_token_program_account_type,
         token_account_to_solana_account, token_mint_to_solana_account,
-        token_multisig_to_solana_account, token_program_account_to_solana_account, AccountFilter,
-        TokenProgramAccountFilter, TokenProgramAccountType,
+        token_mint_to_spl_token_mint, token_multisig_to_solana_account,
+        token_program_account_to_solana_account, AccountFilter, TokenProgramAccountFilter,
+        TokenProgramAccountType,
     },
 };
 
@@ -297,7 +298,9 @@ impl ProcessedAccountStore {
             Commitment::Confirmed => {
                 self.get_confirmed_accounts(account_pks, &mut return_list, confirmed_slot)
             }
-            Commitment::Finalized => unreachable!(),
+            Commitment::Finalized => {
+                unreachable!("this function must not be called for a finalized commitment")
+            }
         };
         return_list
     }
@@ -414,37 +417,118 @@ impl TokenProgramAccountsStorage {
                 .is_some()
     }
 
-    pub fn get_account_finalized(&self, account_pk: Pubkey) -> Option<AccountData> {
-        if let Some(multisig) = self.multisigs.get(&account_pk) {
-            return Some(token_multisig_to_solana_account(
-                &multisig,
-                account_pk,
-                self.finalized_slot.load(Ordering::Relaxed),
-                0,
-            ));
-        }
+    pub fn get_account_finalized(
+        &self,
+        account_pk: Pubkey,
+    ) -> Option<(TokenProgramAccountData, Option<MintAccount>)> {
+        self.multisigs
+            .get(&account_pk)
+            .map(|multisig| {
+                (
+                    TokenProgramAccountData::OtherAccount(token_multisig_to_solana_account(
+                        &multisig,
+                        account_pk,
+                        self.finalized_slot.load(Ordering::Relaxed),
+                        0,
+                    )),
+                    None,
+                )
+            })
+            .or_else(|| {
+                self.mints_index_by_pubkey
+                    .get(&account_pk)
+                    .map(|mint_index| {
+                        let mint_data = self.mints_by_index.get(&mint_index).expect(
+                            "Mint for index must exist when a mint index by pubkey entry exists",
+                        );
+                        (
+                            TokenProgramAccountData::OtherAccount(token_mint_to_solana_account(
+                                &mint_data,
+                                self.finalized_slot.load(Ordering::Relaxed),
+                                0,
+                            )),
+                            None,
+                        )
+                    })
+            })
+            .or_else(|| {
+                self.token_accounts_storage
+                    .get_by_pubkey(&account_pk)
+                    .and_then(|token_account| {
+                        token_account_to_solana_account(
+                            &token_account,
+                            self.finalized_slot.load(Ordering::Relaxed),
+                            0,
+                            &self.mints_by_index,
+                        )
+                        .map(|account_data| {
+                            let mint = self
+                                .mints_by_index
+                                .get(&token_account.mint)
+                                .expect("Mint must exist when a token account for a mint exists");
+                            (
+                                TokenProgramAccountData::TokenAccount(
+                                    TokenProgramTokenAccountData {
+                                        account_data,
+                                        mint_pubkey: mint.pubkey,
+                                    },
+                                ),
+                                Some(mint.clone()),
+                            )
+                        })
+                    })
+            })
+    }
 
-        if let Some(mint_index) = self.mints_index_by_pubkey.get(&account_pk) {
-            let mint_data = self.mints_by_index.get(&mint_index).unwrap();
-            return Some(token_mint_to_solana_account(
-                &mint_data,
-                self.finalized_slot.load(Ordering::Relaxed),
-                0,
-            ));
-        }
-
-        if let Some(token_account) = self.token_accounts_storage.get_by_pubkey(&account_pk) {
-            if token_account.is_deleted {
-                return None;
+    fn get_account_by_commitment(
+        &self,
+        account_pk: Pubkey,
+        commitment: Commitment,
+    ) -> Result<Option<(TokenProgramAccountData, Option<MintAccount>)>, AccountLoadingError> {
+        match commitment {
+            Commitment::Confirmed | Commitment::Processed => {
+                match self
+                    .processed_storage
+                    .get_accounts(
+                        vec![account_pk],
+                        commitment,
+                        self.confirmed_slot.load(Ordering::Relaxed),
+                    )
+                    .first()
+                    .and_then(|first| first.as_ref())
+                {
+                    Some((processed_account, slot)) => Ok(token_program_account_to_solana_account(
+                        &processed_account.processed_account,
+                        *slot,
+                        0,
+                        &self.mints_by_index,
+                    )
+                    .map(|account_data| {
+                        if let TokenProgramAccountType::TokenAccount(token_account) =
+                            &processed_account.processed_account
+                        {
+                            let mint = self
+                                .mints_by_index
+                                .get(&token_account.mint)
+                                .expect("Mint must exist when a token account for a mint exists");
+                            (
+                                TokenProgramAccountData::TokenAccount(
+                                    TokenProgramTokenAccountData {
+                                        account_data,
+                                        mint_pubkey: mint.pubkey,
+                                    },
+                                ),
+                                Some(mint.clone()),
+                            )
+                        } else {
+                            (TokenProgramAccountData::OtherAccount(account_data), None)
+                        }
+                    })),
+                    None => Ok(self.get_account_finalized(account_pk)),
+                }
             }
-            return token_account_to_solana_account(
-                &token_account,
-                self.finalized_slot.load(Ordering::Relaxed),
-                0,
-                &self.mints_by_index,
-            );
+            Commitment::Finalized => Ok(self.get_account_finalized(account_pk)),
         }
-        None
     }
 
     pub fn get_program_accounts_finalized(
@@ -748,29 +832,8 @@ impl AccountStorageInterface for TokenProgramAccountsStorage {
         commitment: Commitment,
     ) -> Result<Option<AccountData>, AccountLoadingError> {
         log::debug!("get account : {}", account_pk.to_string());
-        match commitment {
-            Commitment::Confirmed | Commitment::Processed => {
-                match self
-                    .processed_storage
-                    .get_accounts(
-                        vec![account_pk],
-                        commitment,
-                        self.confirmed_slot.load(Ordering::Relaxed),
-                    )
-                    .first()
-                    .unwrap()
-                {
-                    Some((processed_account, slot)) => Ok(token_program_account_to_solana_account(
-                        &processed_account.processed_account,
-                        *slot,
-                        0,
-                        &self.mints_by_index,
-                    )),
-                    None => Ok(self.get_account_finalized(account_pk)),
-                }
-            }
-            Commitment::Finalized => Ok(self.get_account_finalized(account_pk)),
-        }
+        self.get_account_by_commitment(account_pk, commitment)
+            .map(|res| res.map(|(account_data, _)| account_data.into_inner()))
     }
 
     fn get_program_accounts(
@@ -958,24 +1021,37 @@ impl ProgramAccountStorageInterface for TokenProgramAccountsStorage {
         let mints_for_token_accounts: HashMap<Pubkey, Mint> = mints_for_token_accounts
             .into_iter()
             .map(|(pubkey, mint_account)| {
-                let mint_account_data = token_mint_to_solana_account(
-                    &mint_account,
-                    self.finalized_slot.load(Ordering::Relaxed),
-                    0,
-                );
-                let mint = spl_token::state::Mint::unpack_unchecked(
-                    mint_account_data.account.data.data().as_ref(),
+                (
+                    pubkey,
+                    token_mint_to_spl_token_mint(
+                        &mint_account,
+                        self.finalized_slot.load(Ordering::Relaxed),
+                        0,
+                    ),
                 )
-                .map(Mint::TokenMint)
-                .or(spl_token_2022::state::Mint::unpack_unchecked(
-                    mint_account_data.account.data.data().as_ref(),
-                )
-                .map(Mint::Token2022Mint))
-                .expect("Mint account data must be parsable as token mint");
-                (pubkey, mint)
             })
             .collect();
 
         Ok((account_data, mints_for_token_accounts))
+    }
+
+    fn get_account_with_mint(
+        &self,
+        account_pk: Pubkey,
+        commitment: Commitment,
+    ) -> Result<Option<(TokenProgramAccountData, Option<Mint>)>, AccountLoadingError> {
+        self.get_account_by_commitment(account_pk, commitment)
+            .map(|res| {
+                res.map(|(account_data, mint)| {
+                    let mint = mint.map(|mint_account| {
+                        token_mint_to_spl_token_mint(
+                            &mint_account,
+                            self.finalized_slot.load(Ordering::Relaxed),
+                            0,
+                        )
+                    });
+                    (account_data, mint)
+                })
+            })
     }
 }

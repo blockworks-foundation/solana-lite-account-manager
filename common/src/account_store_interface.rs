@@ -144,4 +144,10 @@ pub trait ProgramAccountStorageInterface: Send + Sync {
         account_filters: Option<Vec<AccountFilterType>>,
         commitment: Commitment,
     ) -> Result<(Vec<TokenProgramAccountData>, HashMap<Pubkey, Mint>), AccountLoadingError>;
+
+    fn get_account_with_mint(
+        &self,
+        account_pk: Pubkey,
+        commitment: Commitment,
+    ) -> Result<Option<(TokenProgramAccountData, Option<Mint>)>, AccountLoadingError>;
 }
