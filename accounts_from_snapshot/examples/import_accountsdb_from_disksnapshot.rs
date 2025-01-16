@@ -98,6 +98,10 @@ pub async fn main() {
     let mut batch = Vec::with_capacity(1024);
     let mut last_slot = 0;
     let mut highest_slot = 0;
+
+    // note: this approach assumes that every account appears only one in the snapshot
+    let mut synthetic_update_slot = 100_000;
+
     'accounts_loop: while let Some(account_data) = accounts_rx.recv().await {
         if !whitelist.contains(&account_data.account.owner) {
             continue 'accounts_loop;
@@ -109,49 +113,61 @@ pub async fn main() {
             }
         }
 
+
+
+        // let slot = account_data.updated_slot;
+        // let slot_changed = {
+        //     let changed = slot != last_slot;
+        //     last_slot = slot;
+        //     changed
+        // };
+        //
+        // let highest_slot_changed = {
+        //     if slot > highest_slot {
+        //         highest_slot = slot;
+        //         true
+        //     } else {
+        //         false
+        //     }
+        // };
+        //
+        // if highest_slot_changed {
+        //     info!("Freezing slot {}", slot);
+        //     db.freeze_slot(slot);
+        // }
+
+
+        batch.push(account_data);
         processed_accounts += 1;
 
-        let slot = account_data.updated_slot;
-        let slot_changed = {
-            let changed = slot != last_slot;
-            last_slot = slot;
-            changed
-        };
+        {
+            assert!(batch.len() <= 1024);
 
-        let highest_slot_changed = {
-            if slot > highest_slot {
-                highest_slot = slot;
-                true
-            } else {
-                false
-            }
-        };
-
-        if highest_slot_changed {
-            info!("Freezing slot {}", slot);
-            db.freeze_slot(slot);
-        }
-
-        if !slot_changed {
-            batch.push(account_data);
-
-            if batch.len() >= 1024 {
+            if batch.len() == 1024 {
                 trace!("Flushing full batch of {} accounts", batch.len());
-                db.initialize_or_update_accounts(slot, &batch);
+                db.initialize_or_update_accounts(synthetic_update_slot, &batch);
                 batch.clear();
             }
-        } else {
-            trace!("Flushing batch on slot change of {} accounts", batch.len());
-            db.initialize_or_update_accounts(slot, &batch);
-            batch.clear();
-            batch.push(account_data);
+        }
+
+
+        if flush_debouncer.can_fire() {
+            db.flush_accounts_cache_if_needed(synthetic_update_slot);
+        }
+
+        // this implicitly controls the size of append_vec files: 10_000 -> 120Mbps
+        if processed_accounts % 10_000 == 0 {
+            info!("Freeze and increment synthetic slot {}", synthetic_update_slot);
+            db.freeze_slot(synthetic_update_slot);
+            db.force_flush(synthetic_update_slot);
+            synthetic_update_slot += 1;
         }
 
         if processed_accounts % 100_000 == 0 {
             info!("Processed {} accounts so far", processed_accounts);
 
             for pk in &some_account_ids_to_play_with {
-                let result = db.get_account(pk.clone(), Commitment::Processed); // TODO check commitment level
+                let result = db.get_account(pk.clone(), Commitment::Finalized); // TODO check commitment level
                 match result {
                     Ok(Some(found)) => {
                         info!("-> found account {:?} with size {}", found.pubkey, found.account.data.len());
@@ -168,13 +184,13 @@ pub async fn main() {
 
         }
 
-        if flush_debouncer.can_fire() {
-            // interval is defined in accounts_background_service: INTERVAL_MS=100
-            info!("Flushing accounts cache");
-            // this is done by background job in validators
-            // db.flush_accounts_cache_if_needed(slot);
-            db.force_flush(slot)
-        }
+        // if flush_debouncer.can_fire() {
+        //     // interval is defined in accounts_background_service: INTERVAL_MS=100
+        //     info!("Flushing accounts cache");
+        //     // this is done by background job in validators
+        //     // db.flush_accounts_cache_if_needed(slot);
+        //     db.force_flush(slot)
+        // }
     }
 
     // TODO we lose the unflushed data
