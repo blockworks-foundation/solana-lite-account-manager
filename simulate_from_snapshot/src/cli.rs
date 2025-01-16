@@ -12,5 +12,4 @@ pub struct Args {
     // grpc token will be provided on env
     #[arg(long)]
     pub grpc_addr: Option<String>,
-
 }

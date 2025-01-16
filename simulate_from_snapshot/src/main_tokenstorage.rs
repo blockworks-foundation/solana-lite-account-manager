@@ -1,41 +1,42 @@
-use std::{env, path::PathBuf, str::FromStr, sync::Arc};
 use std::collections::HashMap;
 use std::time::Duration;
+use std::{env, path::PathBuf, str::FromStr, sync::Arc};
 
+use crate::grpc_source::{all_accounts, process_stream};
 use clap::Parser;
-use geyser_grpc_connector::{GrpcConnectionTimeouts, GrpcSourceConfig};
-use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task_with_mpsc;
-use log::info;
 use cli::Args;
+use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task_with_mpsc;
+use geyser_grpc_connector::{GrpcConnectionTimeouts, GrpcSourceConfig};
 use lite_account_manager_common::{
     account_data::{Account, AccountData, CompressionMethod, Data},
     account_store_interface::AccountStorageInterface,
     commitment::Commitment,
     slot_info::SlotInfo,
 };
+use lite_account_storage::accountsdb::AccountsDb;
 use lite_accounts_from_snapshot::import::import_archive;
 use lite_token_account_storage::{
     inmemory_token_account_storage::InmemoryTokenAccountStorage,
     inmemory_token_storage::TokenProgramAccountsStorage,
 };
-use quic_geyser_common::{
-    filters::Filter, types::connections_parameters::ConnectionParameters,
-};
+use log::info;
+use quic_geyser_common::{filters::Filter, types::connections_parameters::ConnectionParameters};
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::pubkey::Pubkey;
 use tokio::sync::broadcast;
 use tower::util::Optional;
-use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeRequestFilterSlots, SubscribeUpdateSlot};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
-use lite_account_storage::accountsdb::AccountsDb;
-use crate::grpc_source::{all_accounts, process_stream};
+use yellowstone_grpc_proto::geyser::{
+    SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeRequestFilterSlots,
+    SubscribeUpdateSlot,
+};
 
 use crate::rpc_server::RpcServerImpl;
 
 pub mod cli;
-pub mod rpc_server;
 pub mod grpc_source;
+pub mod rpc_server;
 
 #[tokio::main(worker_threads = 2)]
 async fn main() {
@@ -53,21 +54,10 @@ async fn main() {
     let grpc_x_token = env::var("GRPC_X_TOKEN").ok();
 
     let token_account_storage = Arc::new(InmemoryTokenAccountStorage::default());
-    let token_storage: Arc<TokenProgramAccountsStorage> =
-        Arc::new(TokenProgramAccountsStorage::new(token_account_storage.clone()));
+    let token_storage: Arc<TokenProgramAccountsStorage> = Arc::new(
+        TokenProgramAccountsStorage::new(token_account_storage.clone()),
+    );
 
-    if let Some(quic_url) = quic_url {
-        info!("Using quic source on {}", quic_url);
-        stream_accounts_from_quic_geyser_plugin(quic_url, token_storage.clone());
-    }
-
-    if let Some(grpc_addr) = grpc_addr {
-        info!("Using grpc source on {} (token: {})",
-            grpc_addr,
-            grpc_x_token.is_some()
-        );
-        stream_accounts_from_yellowstone_grpc(grpc_addr, grpc_x_token, token_storage.clone());
-    }
 
     // load accounts from snapshot
     let token_storage = token_storage.clone();
@@ -75,14 +65,27 @@ async fn main() {
 
     log::info!("Start importing accounts from full snapshot");
     let (mut accounts_rx, _) = import_archive(archive_path).await;
-    let mut cnt = 0u64;
+    let mut num_token_accounts = 0u64;
+    let mut num_mint_accounts = 0u64;
     while let Some(AccountData {
-                       account, pubkey, ..
-                   }) = accounts_rx.recv().await
+        account, pubkey, ..
+    }) = accounts_rx.recv().await
     {
         if account.owner != spl_token::ID && account.owner != spl_token_2022::ID {
             continue;
         }
+
+        if account.data.len() != 82 {
+            continue;
+        }
+
+        if account.data.len() != 82 {
+            num_token_accounts += 1;
+            continue;
+        } else {
+            num_mint_accounts += 1;
+        }
+
 
         let data = account.data.clone();
         token_storage.initialize_or_update_account(AccountData {
@@ -97,17 +100,32 @@ async fn main() {
             updated_slot: 0,
             write_version: 0,
         });
-        cnt += 1;
-        if cnt % 100_000 == 0 {
-            log::info!("{} token accounts loaded", cnt);
+        if (num_token_accounts + num_mint_accounts) % 100_000 == 0 {
+            log::info!("{} spl token and {} mint accounts loaded", num_token_accounts, num_mint_accounts);
         }
     }
 
     // FIXME: this also counts rejected accounts
     log::info!(
         "Storage Initialized with snapshot, {} token accounts loaded",
-        cnt
+        num_token_accounts
     );
+
+
+    if let Some(quic_url) = quic_url {
+        info!("Using quic source on {}", quic_url);
+        stream_accounts_from_quic_geyser_plugin(quic_url, token_storage.clone());
+    }
+
+    if let Some(grpc_addr) = grpc_addr {
+        info!(
+            "Using grpc source on {} (token: {})",
+            grpc_addr,
+            grpc_x_token.is_some()
+        );
+        stream_accounts_from_yellowstone_grpc(grpc_addr, grpc_x_token, token_storage.clone());
+    }
+
     let rpc_server = RpcServerImpl::new(token_storage.clone(), Some(token_storage));
     RpcServerImpl::start_serving(rpc_server, 10700)
         .await
@@ -116,8 +134,8 @@ async fn main() {
 
 fn stream_accounts_from_quic_geyser_plugin(
     quic_url: String,
-    token_storage: Arc<TokenProgramAccountsStorage>) {
-
+    token_storage: Arc<TokenProgramAccountsStorage>,
+) {
     use quic_geyser_common::message::Message;
 
     let token_storage = token_storage.clone();
@@ -127,8 +145,8 @@ fn stream_accounts_from_quic_geyser_plugin(
                 quic_url,
                 ConnectionParameters::default(),
             )
-                .await
-                .unwrap();
+            .await
+            .unwrap();
         quic_client
             .subscribe(vec![Filter::AccountsAll, Filter::Slot])
             .await
@@ -195,16 +213,14 @@ fn stream_accounts_from_quic_geyser_plugin(
     });
 }
 
-
 fn stream_accounts_from_yellowstone_grpc(
     grpc_addr: String,
     grpc_x_token: Option<String>,
-    token_storage: Arc<TokenProgramAccountsStorage>) {
-
+    token_storage: Arc<TokenProgramAccountsStorage>,
+) {
     use geyser_grpc_connector::Message;
 
     tokio::spawn(async move {
-
         info!(
             "Using grpc source on {} ({})",
             grpc_addr,
@@ -269,7 +285,8 @@ fn stream_accounts_from_yellowstone_grpc(
 
                         let commitment: Commitment = CommitmentConfig {
                             commitment: commitment_level,
-                        }.into();
+                        }
+                        .into();
 
                         token_storage.process_slot_data(
                             SlotInfo {
@@ -281,7 +298,7 @@ fn stream_accounts_from_yellowstone_grpc(
                         );
                     }
                     _ => {}
-                }
+                },
                 _ => {
                     //not supported
                 }
@@ -322,7 +339,6 @@ fn all_slots_and_accounts_together() -> SubscribeRequest {
     }
 }
 
-
 fn map_slot_status(
     slot_update: &SubscribeUpdateSlot,
 ) -> solana_sdk::commitment_config::CommitmentLevel {
@@ -336,5 +352,3 @@ fn map_slot_status(
         })
         .expect("valid commitment level")
 }
-
-
