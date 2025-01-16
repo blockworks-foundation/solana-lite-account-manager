@@ -147,21 +147,7 @@ impl TestRpcServer for RpcServerImpl {
             })
             .map_err(|e| {
                 log::error!("get_program_accounts: {}", e);
-                match e {
-                    AccountLoadingError::AccountNotFound => {
-                        jsonrpsee::types::error::ErrorCode::InvalidParams
-                    }
-                    AccountLoadingError::ShouldContainAnAccountFilter => {
-                        jsonrpsee::types::error::ErrorCode::InvalidParams
-                    }
-                    AccountLoadingError::WrongIndex => {
-                        jsonrpsee::types::error::ErrorCode::InvalidParams
-                    }
-                    AccountLoadingError::TokenAccountsCannotUseThisFilter => {
-                        jsonrpsee::types::error::ErrorCode::InvalidParams
-                    }
-                    _ => jsonrpsee::types::error::ErrorCode::InternalError,
-                }
+                account_loading_error_to_jsonrpsee_error(e)
             })?;
         log::debug!(
             "get_program_accounts: found {} accounts",
@@ -236,18 +222,36 @@ impl TestRpcServer for RpcServerImpl {
             .clone()
             .and_then(|x| x.commitment)
             .unwrap_or_default();
-        let acc = self
-            .storage
-            .get_account(account_pk, Commitment::from(commitment))
-            .map_err(|_| jsonrpsee::types::error::ErrorCode::InternalError)?;
 
-        Ok(acc
-            .map(|acc| RpcResponse {
+        let get_account_result = self
+            .program_account_storage
+            .as_ref()
+            .map(|storage| storage.get_account_with_mint(account_pk, Commitment::from(commitment)))
+            .unwrap_or_else(|| {
+                self.storage
+                    .get_account(account_pk, Commitment::from(commitment))
+                    .map(|account| {
+                        account.map(|account_data| {
+                            (TokenProgramAccountData::OtherAccount(account_data), None)
+                        })
+                    })
+            })
+            .map_err(|e| {
+                log::error!("get_account_info: {}", e);
+                account_loading_error_to_jsonrpsee_error(e)
+            })?;
+
+        Ok(get_account_result
+            .map(|(account_data, token_account_mint)| RpcResponse {
                 context: RpcResponseContext {
-                    slot: acc.updated_slot,
+                    slot: account_data.updated_slot,
                     api_version: None,
                 },
-                value: Some(convert_account_data_to_ui_account(&acc, config, None)),
+                value: Some(convert_account_data_to_ui_account(
+                    &account_data,
+                    config,
+                    convert_mint_to_additional_data(token_account_mint.as_ref()),
+                )),
             })
             .ok_or_else(|| RpcResponse {
                 context: RpcResponseContext {
@@ -284,21 +288,41 @@ fn convert_token_program_account_data_to_additional_data(
     token_account_mints: &HashMap<Pubkey, Mint>,
 ) -> Option<AccountAdditionalDataV2> {
     if let TokenProgramAccountData::TokenAccount(token_account) = token_program_account_data {
-        token_account_mints
-            .get(&token_account.mint_pubkey)
-            .map(|mint| {
-                let decimals = match mint {
-                    Mint::TokenMint(mint) => mint.decimals,
-                    Mint::Token2022Mint(mint) => mint.decimals,
-                };
-                AccountAdditionalDataV2 {
-                    spl_token_additional_data: Some(SplTokenAdditionalData {
-                        decimals,
-                        ..Default::default()
-                    }),
-                }
-            })
+        convert_mint_to_additional_data(token_account_mints.get(&token_account.mint_pubkey))
     } else {
         None
+    }
+}
+
+fn convert_mint_to_additional_data(
+    token_account_mint: Option<&Mint>,
+) -> Option<AccountAdditionalDataV2> {
+    token_account_mint.as_ref().map(|mint| {
+        let decimals = match mint {
+            Mint::TokenMint(mint) => mint.decimals,
+            Mint::Token2022Mint(mint) => mint.decimals,
+        };
+        AccountAdditionalDataV2 {
+            spl_token_additional_data: Some(SplTokenAdditionalData {
+                decimals,
+                ..Default::default()
+            }),
+        }
+    })
+}
+
+fn account_loading_error_to_jsonrpsee_error(
+    e: AccountLoadingError,
+) -> jsonrpsee::types::error::ErrorCode {
+    match e {
+        AccountLoadingError::AccountNotFound => jsonrpsee::types::error::ErrorCode::InvalidParams,
+        AccountLoadingError::ShouldContainAnAccountFilter => {
+            jsonrpsee::types::error::ErrorCode::InvalidParams
+        }
+        AccountLoadingError::WrongIndex => jsonrpsee::types::error::ErrorCode::InvalidParams,
+        AccountLoadingError::TokenAccountsCannotUseThisFilter => {
+            jsonrpsee::types::error::ErrorCode::InvalidParams
+        }
+        _ => jsonrpsee::types::error::ErrorCode::InternalError,
     }
 }

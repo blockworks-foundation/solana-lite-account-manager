@@ -13,7 +13,7 @@ use itertools::Itertools;
 use lite_account_manager_common::{
     account_data::{Account, AccountData},
     account_filter::{AccountFilterType, MemcmpFilter, MemcmpFilterData},
-    account_store_interface::TokenProgramType,
+    account_store_interface::{Mint, TokenProgramType},
 };
 use solana_sdk::{
     program_option::COption,
@@ -464,6 +464,24 @@ pub fn token_mint_to_solana_account(
         updated_slot,
         write_version,
     }
+}
+
+pub fn token_mint_to_spl_token_mint(
+    mint_account: &MintAccount,
+    updated_slot: u64,
+    write_version: u64,
+) -> Mint {
+    let mint_account_data =
+        token_mint_to_solana_account(&mint_account, updated_slot, write_version);
+    let mint =
+        spl_token::state::Mint::unpack_unchecked(mint_account_data.account.data.data().as_ref())
+            .map(Mint::TokenMint)
+            .or(spl_token_2022::state::Mint::unpack_unchecked(
+                mint_account_data.account.data.data().as_ref(),
+            )
+            .map(Mint::Token2022Mint))
+            .expect("Mint account data must be parsable as token mint");
+    mint
 }
 
 pub fn token_multisig_to_solana_account(
