@@ -11,7 +11,7 @@ use yellowstone_grpc_proto::geyser::{
     SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeRequestFilterSlots,
 };
 
-pub(crate) fn process_stream(
+pub fn process_stream(
     mut geyser_messages_rx: Receiver<Message>,
 ) -> (Receiver<SlotInfoWithCommitment>, Receiver<AccountData>) {
     let (accounts_tx, accounts_rx) = tokio::sync::mpsc::channel::<AccountData>(1000);
