@@ -46,7 +46,7 @@ pub trait TestRpc {
 
 pub struct RpcServerImpl {
     storage: Arc<dyn AccountStorageInterface>,
-    program_account_storage: Option<Arc<dyn TokenProgramAccountStorageInterface>>,
+    token_program_account_storage: Option<Arc<dyn TokenProgramAccountStorageInterface>>,
 }
 
 impl RpcServerImpl {
@@ -56,7 +56,7 @@ impl RpcServerImpl {
     ) -> Self {
         Self {
             storage,
-            program_account_storage,
+            token_program_account_storage: program_account_storage,
         }
     }
 
@@ -120,7 +120,7 @@ impl TestRpcServer for RpcServerImpl {
         let commitment = Commitment::from(commitment);
 
         let (program_accounts, token_account_mints) =
-            if let Some(storage) = self.program_account_storage.as_ref() {
+            if let Some(storage) = self.token_program_account_storage.as_ref() {
                 storage.get_program_accounts_with_mints(
                     program_type.clone(),
                     account_filters.clone(),
@@ -217,7 +217,8 @@ impl TestRpcServer for RpcServerImpl {
             .and_then(|x| x.commitment)
             .unwrap_or_default();
 
-        let get_account_result = if let Some(storage) = self.program_account_storage.as_ref() {
+        let get_account_result = if let Some(storage) = self.token_program_account_storage.as_ref()
+        {
             storage.get_account_with_mint(account_pk, Commitment::from(commitment))
         } else {
             self.storage
