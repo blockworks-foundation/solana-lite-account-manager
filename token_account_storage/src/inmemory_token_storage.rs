@@ -12,8 +12,8 @@ use lite_account_manager_common::{
     account_data::AccountData,
     account_filter::AccountFilterType,
     account_store_interface::{
-        AccountLoadingError, AccountStorageInterface, Mint, ProgramAccountStorageInterface,
-        TokenProgramAccountData, TokenProgramTokenAccountData, TokenProgramType,
+        AccountLoadingError, AccountStorageInterface, Mint, TokenProgramAccountData,
+        TokenProgramAccountStorageInterface, TokenProgramTokenAccountData, TokenProgramType,
     },
     commitment::Commitment,
     pubkey_container_utils::PartialPubkey,
@@ -438,8 +438,8 @@ impl TokenProgramAccountsStorage {
                 self.mints_index_by_pubkey
                     .get(&account_pk)
                     .map(|mint_index| {
-                        let mint_data = self.mints_by_index.get(&mint_index).expect(
-                            "Mint for index must exist when a mint index by pubkey entry exists",
+                        let mint_data = self.mints_by_index.get(&mint_index).unwrap_or_else(
+                            || panic!("Mint for index must exist when a mint index by pubkey entry exists: mint_pk={:?}", mint_index.key()),
                         );
                         (
                             TokenProgramAccountData::OtherAccount(token_mint_to_solana_account(
@@ -465,7 +465,7 @@ impl TokenProgramAccountsStorage {
                             let mint = self
                                 .mints_by_index
                                 .get(&token_account.mint)
-                                .expect("Mint must exist when a token account for a mint exists");
+                                .unwrap_or_else(|| panic!("Mint must exist when a token account for a mint exists: token_account_pk={:?}", account_data.pubkey));
                             (
                                 TokenProgramAccountData::TokenAccount(
                                     TokenProgramTokenAccountData {
@@ -510,7 +510,7 @@ impl TokenProgramAccountsStorage {
                             let mint = self
                                 .mints_by_index
                                 .get(&token_account.mint)
-                                .expect("Mint must exist when a token account for a mint exists");
+                                .unwrap_or_else(|| panic!("Mint must exist when a token account for a mint exists: token_account_pk={:?}", token_account.pubkey));
                             (
                                 TokenProgramAccountData::TokenAccount(
                                     TokenProgramTokenAccountData {
@@ -555,78 +555,84 @@ impl TokenProgramAccountsStorage {
             }) => {
                 if let Some(owner) = owner_filter {
                     // filter token accounts by owner and optionally by mint
-                    let indexes: Option<HashSet<u32>> = self
+                    let account_indexes_by_owner: Option<HashSet<u32>> = self
                         .account_by_owner_pubkey
                         .get(&owner.into())
                         .map(|indexes| indexes.iter().cloned().collect());
 
-                    let mint = mint_filter
+                    let matching_mint_index = mint_filter
                         .and_then(|pk| self.mints_index_by_pubkey.get(&pk))
                         .map(|mint_index| *mint_index.value());
 
-                    match indexes {
+                    match account_indexes_by_owner {
                         Some(indexes) => {
-                            let mut mints: HashMap<Pubkey, MintAccount> = HashMap::new();
-                            let mut accounts: Vec<TokenProgramAccountData> = vec![];
-                            for token_account in self
-                                .token_accounts_storage
+                            let mut mints_for_matching_token_accounts: HashMap<
+                                Pubkey,
+                                MintAccount,
+                            > = HashMap::new();
+                            let mut matching_token_accounts: Vec<TokenProgramAccountData> = vec![];
+                            self.token_accounts_storage
                                 .get_by_index(indexes)?
                                 .iter()
                                 .filter(|acc| {
                                     // filter by mint if necessary
-                                    if let Some(mint) = mint {
+                                    if let Some(mint) = matching_mint_index {
                                         acc.mint == mint && acc.owner == owner
                                     } else {
                                         acc.owner == owner
                                     }
                                 })
-                            {
-                                if let Some(account_data) = token_account_to_solana_account(
-                                    token_account,
-                                    finalized_slot,
-                                    0,
-                                    &self.mints_by_index,
-                                ) {
-                                    let mint_account_ref =
-                                        self.mints_by_index.get(&token_account.mint).expect("Mint must exist when a token account for a mint exists");
+                                .flat_map(|token_account| {
+                                    token_account_to_solana_account(
+                                        token_account,
+                                        finalized_slot,
+                                        0,
+                                        &self.mints_by_index,
+                                    )
+                                    .map(|account_data| (token_account, account_data))
+                                })
+                                .for_each(|(token_account, account_data)| {
+                                    let mint_account_ref = self
+                                        .mints_by_index.get(&token_account.mint)
+                                        .unwrap_or_else(|| panic!("Mint must exist when a token account for a mint exists: token_account_pk={:?}", token_account.pubkey));
                                     let mint_account = mint_account_ref.value();
-                                    accounts.push(TokenProgramAccountData::TokenAccount(
-                                        TokenProgramTokenAccountData {
-                                            account_data,
-                                            mint_pubkey: mint_account.pubkey,
-                                        },
-                                    ));
-                                    if !mints.contains_key(&mint_account.pubkey) {
-                                        mints.insert(mint_account.pubkey, mint_account.clone());
-                                    }
-                                }
-                            }
+                                    matching_token_accounts.push(
+                                        TokenProgramAccountData::TokenAccount(
+                                            TokenProgramTokenAccountData {
+                                                account_data,
+                                                mint_pubkey: mint_account.pubkey,
+                                            },
+                                        ),
+                                    );
+                                    mints_for_matching_token_accounts
+                                        .entry(mint_account.pubkey)
+                                        .or_insert_with(|| mint_account.clone());
+                                });
 
-                            Ok((accounts, mints))
+                            Ok((matching_token_accounts, mints_for_matching_token_accounts))
                         }
+                        // with_capacity(0) is used to avoid allocating memory for an empty HashMap
                         None => Ok((vec![], HashMap::with_capacity(0))),
                     }
                 } else if let Some(mint) = mint_filter {
                     // filter token accounts by mint
-                    match self
-                        .mints_index_by_pubkey
-                        .get(&mint)
+                    let matching_mint_index = self.mints_index_by_pubkey.get(&mint);
+                    match matching_mint_index
+                        .as_ref()
                         .and_then(|mint_index| self.accounts_index_by_mint.get(mint_index.value()))
                     {
-                        Some(token_acc_indexes) => {
-                            let indexes: HashSet<u32> =
-                                token_acc_indexes.value().iter().cloned().collect();
+                        Some(token_acc_indexes_for_mint) => {
+                            let found_token_account_indexes: HashSet<u32> =
+                                token_acc_indexes_for_mint.value().iter().cloned().collect();
 
-                            let mint_account = self
-                                .mints_index_by_pubkey
-                                .get(&mint)
+                            let matching_mint_account = matching_mint_index
                                 .and_then(|mint_index| self.mints_by_index.get(&mint_index))
                                 .map(|mint_account| mint_account.value().clone())
-                                .expect("Mint must exist when an account index by mint entry exists for a mint");
+                                .unwrap_or_else(|| panic!("Mint account must exist when a mint index exists: mint_pk={}", mint));
 
-                            let token_accounts = self
+                            let matching_token_accounts = self
                                 .token_accounts_storage
-                                .get_by_index(indexes)?
+                                .get_by_index(found_token_account_indexes)?
                                 .iter()
                                 .filter_map(|token_account| {
                                     token_account_to_solana_account(
@@ -640,17 +646,20 @@ impl TokenProgramAccountsStorage {
                                     TokenProgramAccountData::TokenAccount(
                                         TokenProgramTokenAccountData {
                                             account_data,
-                                            mint_pubkey: mint_account.pubkey,
+                                            mint_pubkey: matching_mint_account.pubkey,
                                         },
                                     )
                                 })
                                 .collect_vec();
 
-                            let mut mints: HashMap<Pubkey, MintAccount> = HashMap::with_capacity(1);
-                            mints.insert(mint_account.pubkey, mint_account);
+                            let mints = HashMap::from([(
+                                matching_mint_account.pubkey,
+                                matching_mint_account,
+                            )]);
 
-                            Ok((token_accounts, mints))
+                            Ok((matching_token_accounts, mints))
                         }
+                        // with_capacity(0) is used to avoid allocating memory for an empty HashMap
                         None => Ok((vec![], HashMap::with_capacity(0))),
                     }
                 } else {
@@ -674,6 +683,7 @@ impl TokenProgramAccountsStorage {
                     })
                     .map(TokenProgramAccountData::OtherAccount)
                     .collect_vec();
+                // with_capacity(0) is used to avoid allocating memory for an empty HashMap
                 Ok((mints, HashMap::with_capacity(0)))
             }
             TokenProgramAccountFilter::MultisigFilter => {
@@ -698,6 +708,7 @@ impl TokenProgramAccountsStorage {
                     })
                     .map(TokenProgramAccountData::OtherAccount)
                     .collect_vec();
+                // with_capacity(0) is used to avoid allocating memory for an empty HashMap
                 Ok((multisigs, HashMap::with_capacity(0)))
             }
             TokenProgramAccountFilter::NoFilter => {
@@ -722,6 +733,7 @@ impl TokenProgramAccountsStorage {
         if commitment == Commitment::Processed || commitment == Commitment::Confirmed {
             // get list of all pks to search
             let pks = account_data.iter().map(|x| x.pubkey).collect_vec();
+            // WTF? processed_storage vs. commitment which may be Processed or Confirmed
             let processed_accounts =
                 self.processed_storage
                     .get_accounts(pks, commitment, confirmed_slot);
@@ -1004,7 +1016,7 @@ impl AccountStorageInterface for TokenProgramAccountsStorage {
     }
 }
 
-impl ProgramAccountStorageInterface for TokenProgramAccountsStorage {
+impl TokenProgramAccountStorageInterface for TokenProgramAccountsStorage {
     fn get_program_accounts_with_mints(
         &self,
         token_program_type: TokenProgramType,
@@ -1018,16 +1030,13 @@ impl ProgramAccountStorageInterface for TokenProgramAccountsStorage {
             commitment,
         )?;
 
+        let finalized_slot = self.finalized_slot.load(Ordering::Relaxed);
         let mints_for_token_accounts: HashMap<Pubkey, Mint> = mints_for_token_accounts
             .into_iter()
             .map(|(pubkey, mint_account)| {
                 (
                     pubkey,
-                    token_mint_to_spl_token_mint(
-                        &mint_account,
-                        self.finalized_slot.load(Ordering::Relaxed),
-                        0,
-                    ),
+                    token_mint_to_spl_token_mint(&mint_account, finalized_slot, 0),
                 )
             })
             .collect();

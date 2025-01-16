@@ -471,8 +471,7 @@ pub fn token_mint_to_spl_token_mint(
     updated_slot: u64,
     write_version: u64,
 ) -> Mint {
-    let mint_account_data =
-        token_mint_to_solana_account(&mint_account, updated_slot, write_version);
+    let mint_account_data = token_mint_to_solana_account(mint_account, updated_slot, write_version);
     let mint =
         spl_token::state::Mint::unpack_unchecked(mint_account_data.account.data.data().as_ref())
             .map(Mint::TokenMint)

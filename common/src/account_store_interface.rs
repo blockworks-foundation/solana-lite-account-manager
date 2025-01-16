@@ -137,7 +137,7 @@ pub enum Mint {
     Token2022Mint(spl_token_2022::state::Mint),
 }
 
-pub trait ProgramAccountStorageInterface: Send + Sync {
+pub trait TokenProgramAccountStorageInterface: Send + Sync {
     fn get_program_accounts_with_mints(
         &self,
         token_program_type: TokenProgramType,
