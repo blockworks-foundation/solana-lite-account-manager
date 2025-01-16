@@ -139,9 +139,9 @@ impl AccountStorageInterface for AccountsOnDemand {
         // it will first compare with existing filters and do the necessary if needed
         if self.mutable_filters.contains_filter(&account_filter) {
             self.accounts_storage
-                .get_program_accounts(program_id, filters.clone(), commitment)
+                .get_program_accounts(program_id, filters, commitment)
         } else {
-            // subsribing to new gpa accounts
+            // subscribing to new gpa accounts
             let mut lk = self.gpa_in_loading.lock().unwrap();
             match lk
                 .get(&(program_id, filters.clone().unwrap_or_default()))
@@ -149,11 +149,9 @@ impl AccountStorageInterface for AccountsOnDemand {
             {
                 Some(loading_account) => {
                     match loading_account.wait_timeout(lk, Duration::from_secs(10)) {
-                        Ok(_) => self.accounts_storage.get_program_accounts(
-                            program_id,
-                            filters.clone(),
-                            commitment,
-                        ),
+                        Ok(_) => self
+                            .accounts_storage
+                            .get_program_accounts(program_id, filters, commitment),
                         Err(_timeout) => {
                             // todo replace with error
                             log::error!("gPA on program : {}", program_id.to_string());

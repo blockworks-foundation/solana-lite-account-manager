@@ -36,7 +36,7 @@ async fn main() {
     } = args;
 
     let token_account_storage = Arc::new(InmemoryTokenAccountStorage::default());
-    let token_storage: Arc<dyn AccountStorageInterface> =
+    let token_storage: Arc<TokenProgramAccountsStorage> =
         Arc::new(TokenProgramAccountsStorage::new(token_account_storage));
 
     // fill from quic geyser stream
@@ -145,7 +145,7 @@ async fn main() {
             write_version: 0,
         });
         cnt += 1;
-        if cnt % 100000 == 0 {
+        if cnt % 100_000 == 0 {
             log::info!("{} token accounts loaded", cnt);
         }
     }
@@ -155,7 +155,7 @@ async fn main() {
         "Storage Initialized with snapshot, {} token accounts loaded",
         cnt
     );
-    let rpc_server = RpcServerImpl::new(token_storage);
+    let rpc_server = RpcServerImpl::new(token_storage.clone(), Some(token_storage));
     let jh = RpcServerImpl::start_serving(rpc_server, 10700)
         .await
         .unwrap();
