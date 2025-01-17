@@ -28,10 +28,9 @@ use crate::{
     token_account_storage_interface::TokenAccountStorageInterface,
     token_program_utils::{
         get_token_program_account_filter, get_token_program_account_type,
-        token_account_to_solana_account, token_mint_to_solana_account,
-        token_mint_to_spl_token_mint, token_multisig_to_solana_account,
-        token_program_account_to_solana_account, AccountFilter, TokenProgramAccountFilter,
-        TokenProgramAccountType,
+        token_account_to_account_data, token_mint_to_account_data, token_mint_to_spl_token_mint,
+        token_multisig_to_account_data, token_program_account_to_account_data, AccountFilter,
+        TokenProgramAccountFilter, TokenProgramAccountType,
     },
 };
 
@@ -162,7 +161,7 @@ impl ProcessedAccountStore {
                 .processed_accounts
                 .iter()
                 .filter_map(|(_, account)| {
-                    token_program_account_to_solana_account(
+                    token_program_account_to_account_data(
                         &account.processed_account,
                         slot_info.slot,
                         account.write_version,
@@ -425,7 +424,7 @@ impl TokenProgramAccountsStorage {
             .get(&account_pk)
             .map(|multisig| {
                 (
-                    TokenProgramAccountData::OtherAccount(token_multisig_to_solana_account(
+                    TokenProgramAccountData::OtherAccount(token_multisig_to_account_data(
                         &multisig,
                         account_pk,
                         self.finalized_slot.load(Ordering::Relaxed),
@@ -442,7 +441,7 @@ impl TokenProgramAccountsStorage {
                             || panic!("Mint for index must exist when a mint index by pubkey entry exists: mint_pk={:?}", mint_index.key()),
                         );
                         (
-                            TokenProgramAccountData::OtherAccount(token_mint_to_solana_account(
+                            TokenProgramAccountData::OtherAccount(token_mint_to_account_data(
                                 &mint_data,
                                 self.finalized_slot.load(Ordering::Relaxed),
                                 0,
@@ -455,7 +454,7 @@ impl TokenProgramAccountsStorage {
                 self.token_accounts_storage
                     .get_by_pubkey(&account_pk)
                     .and_then(|token_account| {
-                        token_account_to_solana_account(
+                        token_account_to_account_data(
                             &token_account,
                             self.finalized_slot.load(Ordering::Relaxed),
                             0,
@@ -497,7 +496,7 @@ impl TokenProgramAccountsStorage {
                     .first()
                     .and_then(|first| first.as_ref())
                 {
-                    Some((processed_account, slot)) => Ok(token_program_account_to_solana_account(
+                    Some((processed_account, slot)) => Ok(token_program_account_to_account_data(
                         &processed_account.processed_account,
                         *slot,
                         0,
@@ -583,7 +582,7 @@ impl TokenProgramAccountsStorage {
                                     }
                                 })
                                 .flat_map(|token_account| {
-                                    token_account_to_solana_account(
+                                    token_account_to_account_data(
                                         token_account,
                                         finalized_slot,
                                         0,
@@ -635,7 +634,7 @@ impl TokenProgramAccountsStorage {
                                 .get_by_index(found_token_account_indexes)?
                                 .iter()
                                 .filter_map(|token_account| {
-                                    token_account_to_solana_account(
+                                    token_account_to_account_data(
                                         token_account,
                                         finalized_slot,
                                         0,
@@ -674,7 +673,7 @@ impl TokenProgramAccountsStorage {
                         mint_account_entry.value().program == program_type.clone().into()
                     })
                     .map(|mint_account_entry| {
-                        token_mint_to_solana_account(mint_account_entry.value(), finalized_slot, 0)
+                        token_mint_to_account_data(mint_account_entry.value(), finalized_slot, 0)
                     })
                     .filter(|account| {
                         account_filters
@@ -694,7 +693,7 @@ impl TokenProgramAccountsStorage {
                         multisig_account_entry.value().program == program_type.clone().into()
                     })
                     .map(|multisig_account_entry| {
-                        token_multisig_to_solana_account(
+                        token_multisig_to_account_data(
                             multisig_account_entry.value(),
                             multisig_account_entry.pubkey,
                             finalized_slot,
@@ -740,7 +739,7 @@ impl TokenProgramAccountsStorage {
             let mut to_remove = vec![];
             for (index, processed_account) in processed_accounts.iter().enumerate() {
                 if let Some((processed_account, slot)) = processed_account {
-                    let updated_account = token_program_account_to_solana_account(
+                    let updated_account = token_program_account_to_account_data(
                         &processed_account.processed_account,
                         *slot,
                         processed_account.write_version,
@@ -892,7 +891,7 @@ impl AccountStorageInterface for TokenProgramAccountsStorage {
                 let accounts_notifications = finalized_accounts
                     .iter()
                     .filter_map(|(acc, slot)| {
-                        token_program_account_to_solana_account(
+                        token_program_account_to_account_data(
                             &acc.processed_account,
                             *slot,
                             acc.write_version,
