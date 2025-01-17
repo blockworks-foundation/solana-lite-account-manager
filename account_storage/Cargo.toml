@@ -5,16 +5,26 @@ edition = "2021"
 
 [dependencies]
 lite-account-manager-common = { workspace = true }
+lite-accounts-from-snapshot = { workspace = true }
+
+yellowstone-grpc-proto = { workspace = true }
+geyser-grpc-connector = { workspace = true }
 
 solana-accounts-db = { workspace = true }
 solana-sdk = { workspace = true }
 
-dashmap = { workspace = true }
-itertools = { workspace = true }
+tokio = { workspace = true }
 futures = { workspace = true }
-lazy_static = { workspace = true }
+
 prometheus = { workspace = true }
+
+dashmap = { workspace = true }
+
 log = { workspace = true }
+env_logger = "0.9.0"
+clap = { version = "4.5.24", features = ["derive"] }
+itertools = { workspace = true }
+lazy_static = { workspace = true }
 bincode = { workspace = true }
 
 [dev-dependencies]

@@ -3,13 +3,15 @@ use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use log::info;
+use log::{debug, info, warn};
+use solana_accounts_db::accounts_db::AccountsDb;
 use solana_sdk::clock::Slot;
+use tokio::sync::mpsc::error::SendError;
+use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinHandle;
 
 pub use download::*;
 use lite_account_manager_common::account_store_interface::AccountStorageInterface;
-use lite_account_storage::accountsdb::AccountsDb;
 use {
     crate::solana::{
         deserialize_from, AccountsDbFields, DeserializableVersionedBank,
@@ -17,6 +19,7 @@ use {
     },
     std::str::FromStr,
 };
+use lite_account_manager_common::account_data::AccountData;
 
 use crate::import::import_archive;
 mod append_vec;
@@ -52,8 +55,9 @@ pub struct Config {
     pub maximum_incremental_snapshot_archives_to_retain: NonZeroUsize,
 }
 
-pub fn start_backfill_import_from_snapshot(cfg: Config, db: Arc<AccountsDb>) -> JoinHandle<()> {
-    tokio::spawn(async move {
+pub fn start_import_from_snapshot(cfg: Config) -> (JoinHandle<()>, Receiver<AccountData>) {
+    let (tx, rx) = tokio::sync::mpsc::channel(1024);
+    let jh = tokio::spawn(async move {
         let loader = Loader::new(cfg);
 
         // TODO use code from find_and_load
@@ -69,16 +73,27 @@ pub fn start_backfill_import_from_snapshot(cfg: Config, db: Arc<AccountsDb>) -> 
 
         info!("Start importing accounts from full snapshot");
         let (mut accounts_rx, _) = import_archive(full_snapshot_archive_file).await;
-        while let Some(account) = accounts_rx.recv().await {
-            db.initialize_or_update_account(account)
-        }
+        forward(&tx, accounts_rx).await;
 
         info!("Start importing accounts from incremental snapshot");
         let (mut accounts_rx, _) = import_archive(incremental_snapshot_archive_dir).await;
-        while let Some(account) = accounts_rx.recv().await {
-            db.initialize_or_update_account(account)
-        }
+        forward(&tx, accounts_rx).await;
 
         info!("Finished importing accounts from snapshots")
-    })
+    });
+
+    (jh, rx)
+}
+
+async fn forward(tx: &Sender<AccountData>, mut accounts_rx: Receiver<AccountData>) {
+    while let Some(account) = accounts_rx.recv().await {
+        match tx.send(account).await {
+            Ok(()) => {}
+            Err(_) => {
+                // receiver dropped
+                debug!("Receiver dropped, stopping import");
+                break;
+            }
+        }
+    }
 }

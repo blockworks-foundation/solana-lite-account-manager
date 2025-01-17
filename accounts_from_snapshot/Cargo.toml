@@ -9,12 +9,12 @@ publish = false
 
 [dependencies]
 lite-account-manager-common = { workspace = true }
-lite-account-storage = { workspace = true }
 
 solana-frozen-abi-macro = { workspace = true }
 solana-runtime = { workspace = true }
 solana-logger = { workspace = true }
 solana-sdk = { workspace = true }
+# required for snapshot reading
 solana-accounts-db = { workspace = true }
 
 #solana-lite-rpc-core = { workspace = true }

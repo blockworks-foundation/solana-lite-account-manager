@@ -18,12 +18,12 @@ use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeRequestFilterAcc
 use lite_account_manager_common::account_data::{Account, AccountData, Data};
 use lite_account_manager_common::account_store_interface::AccountStorageInterface;
 use lite_account_storage::accountsdb::AccountsDb;
-use lite_accounts_from_snapshot::{start_backfill_import_from_snapshot, Config, HostUrl};
+use lite_account_storage::start_backfill_import_from_snapshot;
+use lite_accounts_from_snapshot::{start_import_from_snapshot, Config, HostUrl};
 
 #[tokio::main]
 pub async fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-    solana_logger::setup_with_default("info");
 
     let grpc_addr = env::var("GRPC_ADDR").expect("need grpc url");
     let grpc_x_token = env::var("GRPC_X_TOKEN").ok();

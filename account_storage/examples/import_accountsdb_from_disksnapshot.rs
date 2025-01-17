@@ -20,7 +20,6 @@ pub struct Args {
 #[tokio::main]
 pub async fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-    solana_logger::setup_with_default("info");
 
     let Args {
         snapshot_archive_path,
