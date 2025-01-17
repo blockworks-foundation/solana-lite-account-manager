@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+
+use itertools::Itertools;
 use {
     crate::{
         deserialize_from, AccountsDbFields, DeserializableVersionedBank,
@@ -113,6 +116,27 @@ where
                 let (slot, id) = path.file_name().and_then(parse_append_vec_name)?;
                 Some(self.process_entry(&mut entry, slot, id))
             })
+    }
+
+    // hacky
+    fn unboxed_iter_ordered(&mut self) -> impl Iterator<Item = SnapshotResult<AppendVec>> + '_ {
+        self.entries
+            .take()
+            .into_iter()
+            .flatten()
+            .filter_map(|entry| {
+                // TODO replace this with Result
+                let Ok(entry) = entry else {
+                    return None;
+                };
+                let Ok(path) = entry.path() else {
+                    return None;
+                };
+                let (slot, id) = path.file_name().and_then(parse_append_vec_name)?;
+                Some((entry, slot, id))
+            })
+            .sorted_unstable_by_key(|(_entry, slot, _id)| *slot)
+            .map(move |(mut entry, slot, id)| self.process_entry(&mut entry, slot, id))
     }
 
     fn process_entry(

@@ -2,7 +2,7 @@ use std::sync::Arc;
 use log::info;
 use tokio::task::JoinHandle;
 use lite_account_manager_common::account_store_interface::AccountStorageInterface;
-use lite_accounts_from_snapshot::{Config, Loader, start_import_from_snapshot};
+use lite_accounts_from_snapshot::{Config, start_import_from_snapshot};
 use crate::accountsdb::AccountsDb;
 
 pub mod account_data_by_commitment;

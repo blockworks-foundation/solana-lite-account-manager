@@ -19,7 +19,7 @@ use lite_account_manager_common::account_data::{Account, AccountData, Data};
 use lite_account_manager_common::account_store_interface::AccountStorageInterface;
 use lite_account_storage::accountsdb::AccountsDb;
 use lite_account_storage::start_backfill_import_from_snapshot;
-use lite_accounts_from_snapshot::{start_import_from_snapshot, Config, HostUrl};
+use lite_accounts_from_snapshot::{Config, HostUrl};
 
 #[tokio::main]
 pub async fn main() {

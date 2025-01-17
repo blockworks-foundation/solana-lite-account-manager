@@ -18,7 +18,7 @@ use lite_account_manager_common::{
 };
 use lite_account_storage::accountsdb::AccountsDb;
 use lite_account_storage::start_backfill_import_from_snapshot;
-use lite_accounts_from_snapshot::{start_import_from_snapshot, Config, HostUrl};
+use lite_accounts_from_snapshot::{Config, HostUrl};
 
 use crate::rpc_server::RpcServerImpl;
 
