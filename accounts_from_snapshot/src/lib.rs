@@ -22,6 +22,7 @@ use crate::import::import_archive;
 mod append_vec;
 mod archived;
 mod core;
+pub mod debouncer_instant;
 mod download;
 mod find;
 pub mod import;

@@ -15,6 +15,7 @@ use lite_account_manager_common::account_data::{Account, AccountData, Data};
 use crate::archived::ArchiveSnapshotExtractor;
 use crate::core::{append_vec_iter, SnapshotExtractor};
 
+// note: slots are NOT ordered
 pub async fn import_archive(archive_path: PathBuf) -> (Receiver<AccountData>, JoinHandle<()>) {
     let (tx, rx) = mpsc::channel::<AccountData>(10_000);
 
