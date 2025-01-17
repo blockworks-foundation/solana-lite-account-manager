@@ -193,7 +193,7 @@ impl AccountStorageInterface for AccountsOnDemand {
         }
     }
 
-    fn process_slot_data(&self, slot_info: SlotInfo, commitment: Commitment) -> Vec<AccountData> {
+    fn process_slot_data(&self, slot_info: SlotInfo, commitment: Commitment) -> Vec<()> {
         self.accounts_storage
             .process_slot_data(slot_info, commitment)
     }
