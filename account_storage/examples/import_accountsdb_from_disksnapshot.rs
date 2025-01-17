@@ -57,7 +57,7 @@ pub async fn main() {
         vec![account_index_path],
     ));
 
-    start_accountsdb_read_task(Arc::clone(&db));
+    start_accountsdb_read_task(db.clone());
 
     let included_program_ids = [
         "srmqPvymJeFKQ4zGQed1GFppgkRHL9kaELCbyksJtPX",

@@ -8,6 +8,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinHandle;
 
 pub use download::*;
+use lite_account_manager_common::account_data::AccountData;
 use {
     crate::solana::{
         deserialize_from, AccountsDbFields, DeserializableVersionedBank,
@@ -15,7 +16,6 @@ use {
     },
     std::str::FromStr,
 };
-use lite_account_manager_common::account_data::AccountData;
 
 use crate::import::import_archive;
 mod append_vec;

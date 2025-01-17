@@ -63,7 +63,7 @@ pub async fn main() {
 
         if backfill_task_started.set(()).is_ok() {
             // note: need to start backfilling with slot AFTER the first slot from the stream
-            start_backfill(slot + 1, Arc::clone(&db));
+            start_backfill(slot + 1, db.clone());
         }
 
         db.initialize_or_update_account(account);

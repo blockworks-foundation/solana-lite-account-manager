@@ -3,7 +3,7 @@ name = "lite-accounts-from-snapshot"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
-description = "Read AccountsDB data from AppendVec fiels"
+description = "Find and read account data from snapshot files"
 keywords = ["solana"]
 publish = false
 
@@ -56,7 +56,3 @@ lazy_static = "1.5.0"
 once_cell = "1.20.2"
 clap = { version = "4.5.24", features = ["derive"] }
 
-[lints.clippy]
-clone_on_ref_ptr = "deny"
-missing_const_for_fn = "deny"
-trivially_copy_pass_by_ref = "deny"
