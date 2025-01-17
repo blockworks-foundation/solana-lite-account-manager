@@ -322,7 +322,12 @@ pub fn token_account_to_solana_account(
         return None;
     }
     let (delegate, delegated_amount) = token_account.delegate.unwrap_or_default();
-    let mint = mints_by_index.get(&token_account.mint).unwrap();
+    let mint = mints_by_index.get(&token_account.mint).unwrap_or_else(|| {
+        panic!(
+            "Mint must exist when getting mint by index from a token account: token_account_pk={:?}",
+            token_account.pubkey
+        )
+    });
     let data = match token_account.program {
         Program::TokenProgram => {
             let t_acc = spl_token::state::Account {
@@ -471,8 +476,7 @@ pub fn token_mint_to_spl_token_mint(
     updated_slot: u64,
     write_version: u64,
 ) -> Mint {
-    let mint_account_data =
-        token_mint_to_solana_account(&mint_account, updated_slot, write_version);
+    let mint_account_data = token_mint_to_solana_account(mint_account, updated_slot, write_version);
     let mint =
         spl_token::state::Mint::unpack_unchecked(mint_account_data.account.data.data().as_ref())
             .map(Mint::TokenMint)

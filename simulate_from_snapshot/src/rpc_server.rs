@@ -10,8 +10,8 @@ use jsonrpsee::server::ServerBuilder;
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use lite_account_manager_common::account_filter::AccountFilterType as AmAccountFilterType;
 use lite_account_manager_common::account_store_interface::{
-    AccountLoadingError, AccountStorageInterface, Mint, ProgramAccountStorageInterface,
-    TokenProgramAccountData, TokenProgramType,
+    AccountLoadingError, AccountStorageInterface, Mint, TokenProgramAccountData,
+    TokenProgramAccountStorageInterface, TokenProgramType,
 };
 use lite_account_manager_common::{account_data::AccountData, commitment::Commitment};
 use solana_account_decoder::parse_account_data::{AccountAdditionalDataV2, SplTokenAdditionalData};
@@ -46,17 +46,17 @@ pub trait TestRpc {
 
 pub struct RpcServerImpl {
     storage: Arc<dyn AccountStorageInterface>,
-    program_account_storage: Option<Arc<dyn ProgramAccountStorageInterface>>,
+    token_program_account_storage: Option<Arc<dyn TokenProgramAccountStorageInterface>>,
 }
 
 impl RpcServerImpl {
     pub fn new(
         storage: Arc<dyn AccountStorageInterface>,
-        program_account_storage: Option<Arc<dyn ProgramAccountStorageInterface>>,
+        program_account_storage: Option<Arc<dyn TokenProgramAccountStorageInterface>>,
     ) -> Self {
         Self {
             storage,
-            program_account_storage,
+            token_program_account_storage: program_account_storage,
         }
     }
 
@@ -119,17 +119,14 @@ impl TestRpcServer for RpcServerImpl {
             .map(|filters| filters.iter().map(AmAccountFilterType::from).collect_vec());
         let commitment = Commitment::from(commitment);
 
-        let (program_accounts, token_account_mints) = self
-            .program_account_storage
-            .as_ref()
-            .map(|storage| {
+        let (program_accounts, token_account_mints) =
+            if let Some(storage) = self.token_program_account_storage.as_ref() {
                 storage.get_program_accounts_with_mints(
                     program_type.clone(),
                     account_filters.clone(),
                     commitment,
                 )
-            })
-            .unwrap_or_else(|| {
+            } else {
                 self.storage
                     .get_program_accounts(*program_type.as_ref(), account_filters, commitment)
                     .map(|accounts| {
@@ -141,7 +138,7 @@ impl TestRpcServer for RpcServerImpl {
                             HashMap::with_capacity(0),
                         )
                     })
-            })
+            }
             .map_err(|e| {
                 log::error!("get_program_accounts: {}", e);
                 account_loading_error_to_jsonrpsee_error(e)
@@ -220,23 +217,22 @@ impl TestRpcServer for RpcServerImpl {
             .and_then(|x| x.commitment)
             .unwrap_or_default();
 
-        let get_account_result = self
-            .program_account_storage
-            .as_ref()
-            .map(|storage| storage.get_account_with_mint(account_pk, Commitment::from(commitment)))
-            .unwrap_or_else(|| {
-                self.storage
-                    .get_account(account_pk, Commitment::from(commitment))
-                    .map(|account| {
-                        account.map(|account_data| {
-                            (TokenProgramAccountData::OtherAccount(account_data), None)
-                        })
+        let get_account_result = if let Some(storage) = self.token_program_account_storage.as_ref()
+        {
+            storage.get_account_with_mint(account_pk, Commitment::from(commitment))
+        } else {
+            self.storage
+                .get_account(account_pk, Commitment::from(commitment))
+                .map(|account| {
+                    account.map(|account_data| {
+                        (TokenProgramAccountData::OtherAccount(account_data), None)
                     })
-            })
-            .map_err(|e| {
-                log::error!("get_account_info: {}", e);
-                account_loading_error_to_jsonrpsee_error(e)
-            })?;
+                })
+        }
+        .map_err(|e| {
+            log::error!("get_account_info: {}", e);
+            account_loading_error_to_jsonrpsee_error(e)
+        })?;
 
         Ok(get_account_result
             .map(|(account_data, token_account_mint)| RpcResponse {
