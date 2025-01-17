@@ -862,7 +862,7 @@ impl AccountStorageInterface for TokenProgramAccountsStorage {
             })
     }
 
-    fn process_slot_data(&self, slot_info: SlotInfo, commitment: Commitment) -> Vec<AccountData> {
+    fn process_slot_data(&self, slot_info: SlotInfo, commitment: Commitment) -> Vec<()> {
         match commitment {
             Commitment::Processed => {
                 log::debug!("process slot data  : {slot_info:?}");
@@ -876,7 +876,8 @@ impl AccountStorageInterface for TokenProgramAccountsStorage {
                     self.processed_storage.update_slot_info(slot_info);
                 }
                 self.processed_storage
-                    .get_processed_for_slot(slot_info, &self.mints_by_index)
+                    .get_processed_for_slot(slot_info, &self.mints_by_index);
+                todo!()
             }
             Commitment::Finalized => {
                 log::debug!("finalize slot data  : {slot_info:?}");
@@ -902,7 +903,7 @@ impl AccountStorageInterface for TokenProgramAccountsStorage {
                 for (finalized_account, _) in finalized_accounts {
                     self.add_account_finalized(finalized_account.processed_account);
                 }
-                accounts_notifications
+                vec![]
             }
         }
     }

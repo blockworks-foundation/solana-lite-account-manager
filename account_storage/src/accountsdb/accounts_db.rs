@@ -276,7 +276,7 @@ impl AccountStorageInterface for AccountsDb {
         Ok(result)
     }
 
-    fn process_slot_data(&self, info: SlotInfo, commitment: Commitment) -> Vec<AccountData> {
+    fn process_slot_data(&self, info: SlotInfo, commitment: Commitment) -> Vec<()> {
         let slot = info.slot;
         if commitment == Commitment::Finalized {
             self.accounts.add_root(slot);
@@ -321,7 +321,9 @@ impl AccountStorageInterface for AccountsDb {
             .into_iter()
             .filter(|(_, _, updated_slot)| *updated_slot == slot)
             .map(|(key, data, slot)| Self::convert_to_account_data(key, slot, data))
-            .collect_vec()
+            .collect_vec();
+
+        todo!()
     }
 
     fn create_snapshot(&self, _program_id: Pubkey) -> Result<Vec<u8>, AccountLoadingError> {
