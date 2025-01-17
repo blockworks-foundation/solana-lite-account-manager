@@ -7,7 +7,7 @@ members = [
     "accounts_on_demand",
     "common",
     "token_account_storage",
-    "simulate_from_snapshot"
+    "simulate_from_snapshot",
 ]
 
 [workspace.package]
@@ -19,6 +19,7 @@ repository = "https://github.com/blockworks-foundation/solana-lite-account-manag
 license = "AGPL"
 
 [workspace.dependencies]
+solana-logger = "~2.0.16"
 solana-sdk = "~2.0.16"
 solana-rpc-client = "~2.0.16"
 solana-account-decoder = "~2.0.16"
@@ -54,7 +55,7 @@ spl-token = "6.0.0"
 spl-token-2022 = "5.0.2"
 
 thiserror = "2.0.7"
-tokio = { version = "1.42.0", features = ["rt-multi-thread", "macros"]}
+tokio = { version = "1.42.0", features = ["rt-multi-thread", "macros"] }
 
 yellowstone-grpc-proto = { git = "https://github.com/rpcpool/yellowstone-grpc.git", tag = "v2.0.0+solana.2.0.16" }
 geyser-grpc-connector = { git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git", tag = "v0.11.0+yellowstone.2.0.0+solana.2.0" }

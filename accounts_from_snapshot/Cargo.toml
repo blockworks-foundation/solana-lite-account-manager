@@ -9,10 +9,11 @@ publish = false
 
 [dependencies]
 lite-account-manager-common = { workspace = true }
-lite-account-storage = { workspace = true}
+lite-account-storage = { workspace = true }
 
 solana-frozen-abi-macro = { workspace = true }
 solana-runtime = { workspace = true }
+solana-logger = { workspace = true }
 solana-sdk = { workspace = true }
 solana-accounts-db = { workspace = true }
 
@@ -23,7 +24,7 @@ async-trait = { workspace = true }
 bincode = "1.3.3"
 env_logger = "0.9.0"
 futures = { workspace = true }
-itertools = { workspace = true}
+itertools = { workspace = true }
 log = { workspace = true }
 memmap2 = "0.5.5"
 num_cpus = "1.16.0"
@@ -37,7 +38,14 @@ tempfile = { workspace = true }
 tokio = { workspace = true }
 
 # loader
-reqwest = { version = "0.12.9", features = ["blocking", "brotli", "deflate", "gzip", "rustls-tls", "json"] }
+reqwest = { version = "0.12.9", features = [
+    "blocking",
+    "brotli",
+    "deflate",
+    "gzip",
+    "rustls-tls",
+    "json",
+] }
 solana-download-utils = "2.0.15"
 
 yellowstone-grpc-proto = { workspace = true }
