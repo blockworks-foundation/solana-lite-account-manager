@@ -308,24 +308,33 @@ fn stream_accounts_from_yellowstone_grpc(
     });
 }
 
+/// 1. slots with all commitment levels
+/// 2. spl accounts (token+mints) of spl-token and spl-token-2022 program, commitment level is processed (avoids buffering in yellowstone geyser plugin)
 fn all_slots_and_accounts_together() -> SubscribeRequest {
-    let mut slot_subs = HashMap::new();
-    slot_subs.insert(
-        "client".to_string(),
-        SubscribeRequestFilterSlots {
-            // implies all slots
-            filter_by_commitment: None,
-        },
-    );
-    let mut account_subs = HashMap::new();
-    account_subs.insert(
-        "client".to_string(),
-        SubscribeRequestFilterAccounts {
-            account: vec![],
-            owner: vec![],
-            filters: vec![],
-        },
-    );
+    let slot_subs: HashMap<String, SubscribeRequestFilterSlots> =
+        HashMap::from(
+            [(
+                "sub_slots_all_commitment_levels".to_string(),
+                SubscribeRequestFilterSlots {
+                    // implies all slots
+                    filter_by_commitment: None,
+                },
+            )]
+        );
+    let account_subs: HashMap<String, SubscribeRequestFilterAccounts> =
+        HashMap::from(
+            [(
+                "sub_spl_accounts".to_string(),
+                SubscribeRequestFilterAccounts {
+                    account: vec![],
+                    owner: vec![
+                        spl_token::ID.to_string(),
+                        spl_token_2022::ID.to_string(),
+                    ],
+                    filters: vec![],
+                },
+            )]
+        );
 
     SubscribeRequest {
         slots: slot_subs,
