@@ -86,7 +86,6 @@ async fn main() {
             num_mint_accounts += 1;
         }
 
-
         let data = account.data.clone();
         token_storage.initialize_or_update_account(AccountData {
             pubkey,
@@ -105,10 +104,9 @@ async fn main() {
         }
     }
 
-    // FIXME: this also counts rejected accounts
     log::info!(
-        "Storage Initialized with snapshot, {} token accounts loaded",
-        num_token_accounts
+        "Storage Initialized with snapshot, {} spl program accounts loaded",
+        num_token_accounts + num_mint_accounts
     );
 
 
