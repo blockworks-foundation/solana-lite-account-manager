@@ -10,32 +10,33 @@ publish = false
 [dependencies]
 lite-account-manager-common = { workspace = true }
 
+solana-download-utils = "~2.0.16"
 solana-frozen-abi-macro = { workspace = true }
 solana-runtime = { workspace = true }
 solana-logger = { workspace = true }
 solana-sdk = { workspace = true }
 # required for snapshot reading
 solana-accounts-db = { workspace = true }
+# required for snapshot reading
+memmap2 = "0.5.5"
 
-#solana-lite-rpc-core = { workspace = true }
+tokio = { workspace = true }
+futures = { workspace = true }
 
+log = { workspace = true }
+tracing-subscriber = "0.3.19"
+regex = { version = "1.11.0", features = [] }
+lazy_static = "1.5.0"
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bincode = "1.3.3"
 env_logger = "0.9.0"
-futures = { workspace = true }
 itertools = { workspace = true }
-log = { workspace = true }
-memmap2 = "0.5.5"
-num_cpus = "1.16.0"
 serde = { workspace = true }
 serde_json = { workspace = true }
-sha2 = "0.10.7"
 tar = "0.4.38"
-thiserror = { workspace = true }
 zstd = "0.11.2"
-tempfile = { workspace = true }
-tokio = { workspace = true }
+thiserror = { workspace = true }
 
 # loader
 reqwest = { version = "0.12.9", features = [
@@ -46,13 +47,8 @@ reqwest = { version = "0.12.9", features = [
     "rustls-tls",
     "json",
 ] }
-solana-download-utils = "2.0.15"
 
-yellowstone-grpc-proto = { workspace = true }
-geyser-grpc-connector = { workspace = true }
-tracing-subscriber = "0.3.19"
-regex = { version = "1.11.0", features = [] }
-lazy_static = "1.5.0"
-once_cell = "1.20.2"
+
+[dev-dependencies]
 clap = { version = "4.5.24", features = ["derive"] }
 

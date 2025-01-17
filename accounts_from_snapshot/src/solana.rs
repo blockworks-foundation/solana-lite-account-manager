@@ -37,6 +37,10 @@ use solana_sdk::slot_history::Slot;
 use solana_sdk::stake::state::Delegation;
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
+use lazy_static::lazy_static;
+use regex::Regex;
+use solana_runtime::snapshot_hash::SnapshotHash;
+use solana_runtime::snapshot_utils::{ArchiveFormat, INCREMENTAL_SNAPSHOT_ARCHIVE_FILENAME_REGEX, SnapshotError};
 
 const MAX_STREAM_SIZE: u64 = 32 * 1024 * 1024 * 1024;
 
@@ -124,4 +128,40 @@ pub type SerializedAppendVecId = usize;
 pub struct SerializableAccountStorageEntry {
     pub id: SerializedAppendVecId,
     pub accounts_current_len: usize,
+}
+
+
+pub fn parse_incremental_snapshot_archive_filename(
+    archive_filename: &str,
+) -> solana_runtime::snapshot_utils::Result<(Slot, Slot, SnapshotHash, ArchiveFormat)> {
+    lazy_static! {
+        static ref RE: Regex = Regex::new(INCREMENTAL_SNAPSHOT_ARCHIVE_FILENAME_REGEX).unwrap();
+    }
+
+    let do_parse = || {
+        RE.captures(archive_filename).and_then(|captures| {
+            let base_slot = captures
+                .name("base")
+                .map(|x| x.as_str().parse::<Slot>())?
+                .ok()?;
+            let slot = captures
+                .name("slot")
+                .map(|x| x.as_str().parse::<Slot>())?
+                .ok()?;
+            let hash = captures
+                .name("hash")
+                .map(|x| x.as_str().parse::<Hash>())?
+                .ok()?;
+            let archive_format = captures
+                .name("ext")
+                .map(|x| x.as_str().parse::<ArchiveFormat>())?
+                .ok()?;
+
+            Some((base_slot, slot, SnapshotHash(hash), archive_format))
+        })
+    };
+
+    do_parse().ok_or_else(|| {
+        SnapshotError::ParseSnapshotArchiveFileNameError(archive_filename.to_string())
+    })
 }
