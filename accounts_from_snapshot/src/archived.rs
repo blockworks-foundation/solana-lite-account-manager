@@ -1,4 +1,5 @@
-use futures::TryStreamExt;
+#![allow(dead_code)]
+
 use itertools::Itertools;
 use {
     crate::{
@@ -125,15 +126,13 @@ where
             .flatten()
             .filter_map(|entry| {
                 // TODO replace this with Result
-                let Ok(mut entry) = entry else {
+                let Ok(entry) = entry else {
                     return None;
                 };
                 let Ok(path) = entry.path() else {
                     return None;
                 };
-                let Some((slot, id)) = path.file_name().and_then(parse_append_vec_name) else {
-                    return None;
-                };
+                let (slot, id) = path.file_name().and_then(parse_append_vec_name)?;
                 Some((entry, slot, id))
             })
             .sorted_unstable_by_key(|(_entry, slot, _id)| *slot)

@@ -1,7 +1,6 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use itertools::Itertools;
-use log::{error, info, trace, warn};
+use log::{error, trace, warn};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;

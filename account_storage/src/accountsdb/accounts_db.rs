@@ -187,7 +187,6 @@ impl AccountsDb {
 
     // don't know what this is doing
     pub fn freeze_slot(&self, slot: Slot) {
-
         // add_root alone leads to append_vecs to be written to disk
 
         // see run_test_flush_accounts_cache_if_needed

@@ -5,14 +5,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use clap::Parser;
-use itertools::Itertools;
-use lite_account_manager_common::account_data::AccountData;
-use log::{debug, info, trace, warn};
-use solana_accounts_db::storable_accounts::{AccountForStorage, StorableAccounts};
-use solana_sdk::clock::Slot;
+use log::{info, trace, warn};
 use solana_sdk::pubkey::Pubkey;
 
-use lite_account_manager_common::account_store_interface::{AccountLoadingError, AccountStorageInterface};
+use lite_account_manager_common::account_store_interface::AccountStorageInterface;
 use lite_account_manager_common::commitment::Commitment;
 use lite_account_storage::accountsdb::AccountsDb;
 use lite_accounts_from_snapshot::debouncer_instant;
@@ -62,7 +58,7 @@ pub async fn main() {
         vec![account_index_path],
     ));
 
-    start_accountsdb_read_task(db.clone());
+    start_accountsdb_read_task(Arc::clone(&db));
 
     let included_program_ids = [
         "srmqPvymJeFKQ4zGQed1GFppgkRHL9kaELCbyksJtPX",
@@ -96,8 +92,8 @@ pub async fn main() {
     let (mut accounts_rx, _) =
         import_archive(PathBuf::from_str(&snapshot_archive_path).unwrap()).await;
     let mut batch = Vec::with_capacity(1024);
-    let mut last_slot = 0;
-    let mut highest_slot = 0;
+    // let mut last_slot = 0;
+    // let mut highest_slot = 0;
 
     // note: this approach assumes that every account appears only one in the snapshot
     let mut synthetic_update_slot = 100_000;
@@ -107,13 +103,9 @@ pub async fn main() {
             continue 'accounts_loop;
         }
 
-        if processed_accounts % 100 == 0 {
-            if some_account_ids_to_play_with.len() < 20 {
-                some_account_ids_to_play_with.push(account_data.pubkey);
-            }
+        if processed_accounts % 100 == 0 && some_account_ids_to_play_with.len() < 20 {
+            some_account_ids_to_play_with.push(account_data.pubkey);
         }
-
-
 
         // let slot = account_data.updated_slot;
         // let slot_changed = {
@@ -136,7 +128,6 @@ pub async fn main() {
         //     db.freeze_slot(slot);
         // }
 
-
         batch.push(account_data);
         processed_accounts += 1;
 
@@ -150,14 +141,16 @@ pub async fn main() {
             }
         }
 
-
         if flush_debouncer.can_fire() {
             db.flush_accounts_cache_if_needed(synthetic_update_slot);
         }
 
         // this implicitly controls the size of append_vec files: 10_000 -> 120Mbps
         if processed_accounts % 10_000 == 0 {
-            info!("Freeze and increment synthetic slot {}", synthetic_update_slot);
+            info!(
+                "Freeze and increment synthetic slot {}",
+                synthetic_update_slot
+            );
             db.freeze_slot(synthetic_update_slot);
             db.force_flush(synthetic_update_slot);
             synthetic_update_slot += 1;
@@ -167,10 +160,14 @@ pub async fn main() {
             info!("Processed {} accounts so far", processed_accounts);
 
             for pk in &some_account_ids_to_play_with {
-                let result = db.get_account(pk.clone(), Commitment::Finalized); // TODO check commitment level
+                let result = db.get_account(*pk, Commitment::Finalized); // TODO check commitment level
                 match result {
                     Ok(Some(found)) => {
-                        info!("-> found account {:?} with size {}", found.pubkey, found.account.data.len());
+                        info!(
+                            "-> found account {:?} with size {}",
+                            found.pubkey,
+                            found.account.data.len()
+                        );
                     }
                     Err(err) => {
                         warn!("-> error loading account {:?}: {:?}", pk, err);
@@ -179,9 +176,7 @@ pub async fn main() {
                         warn!("-> eccount {:?} not found", pk);
                     }
                 }
-
             }
-
         }
 
         // if flush_debouncer.can_fire() {
@@ -204,18 +199,18 @@ pub async fn main() {
 
 fn start_accountsdb_read_task(db: Arc<AccountsDb>) {
     tokio::spawn(async move {
-
-        let db = db.clone();
-
         let mut tick = tokio::time::interval(Duration::from_secs(1));
         loop {
-
             let pk = Pubkey::from_str("88hUW6qs3QGv6cfoejkq7zgeWAE5BhYPJ2CjWnXzoBtN").unwrap();
 
-            let result = db.get_account(pk.clone(), Commitment::Finalized);
+            let result = db.get_account(pk, Commitment::Finalized);
             match result {
                 Ok(Some(found)) => {
-                    info!("-> found account {:?} with size {}", found.pubkey, found.account.data.len());
+                    info!(
+                        "-> found account {:?} with size {}",
+                        found.pubkey,
+                        found.account.data.len()
+                    );
                 }
                 Err(err) => {
                     warn!("-> error loading account {:?}: {:?}", pk, err);
@@ -225,10 +220,7 @@ fn start_accountsdb_read_task(db: Arc<AccountsDb>) {
                 }
             }
 
-
             tick.tick().await;
         }
-
     });
-
 }
