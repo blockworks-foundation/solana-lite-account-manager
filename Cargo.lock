@@ -2645,12 +2645,16 @@ dependencies = [
  "base64 0.21.7",
  "bincode",
  "bs58 0.4.0",
+ "clap 4.5.24",
  "crossbeam-channel",
  "dashmap",
+ "env_logger",
  "futures",
+ "geyser-grpc-connector",
  "itertools 0.10.5",
  "lazy_static",
  "lite-account-manager-common",
+ "lite-accounts-from-snapshot",
  "log",
  "prometheus",
  "rand 0.8.5",
@@ -2658,6 +2662,8 @@ dependencies = [
  "rayon",
  "solana-accounts-db",
  "solana-sdk",
+ "tokio",
+ "yellowstone-grpc-proto",
 ]
 
 [[package]]
@@ -2670,32 +2676,24 @@ dependencies = [
  "clap 4.5.24",
  "env_logger",
  "futures",
- "geyser-grpc-connector",
  "itertools 0.10.5",
  "lazy_static",
  "lite-account-manager-common",
- "lite-account-storage",
  "log",
  "memmap2",
- "num_cpus",
- "once_cell",
  "regex",
  "reqwest 0.12.9",
  "serde",
  "serde_json",
- "sha2 0.10.8",
  "solana-accounts-db",
  "solana-download-utils",
- "solana-frozen-abi-macro",
  "solana-logger",
  "solana-runtime",
  "solana-sdk",
  "tar",
- "tempfile",
  "thiserror 2.0.7",
  "tokio",
  "tracing-subscriber",
- "yellowstone-grpc-proto",
  "zstd 0.11.2+zstd.1.5.2",
 ]
 
@@ -2735,15 +2733,12 @@ dependencies = [
  "lite-accounts-from-snapshot",
  "lite-token-account-storage",
  "log",
- "memmap2",
  "prometheus",
  "quic-geyser-client",
  "quic-geyser-common",
  "serde",
  "solana-account-decoder",
- "solana-accounts-db",
  "solana-client",
- "solana-frozen-abi-macro",
  "solana-rpc-client-api",
  "solana-runtime",
  "solana-sdk",
@@ -4938,18 +4933,6 @@ dependencies = [
  "reqwest 0.11.27",
  "solana-runtime",
  "solana-sdk",
-]
-
-[[package]]
-name = "solana-frozen-abi-macro"
-version = "2.0.16"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "171f028449b1020844958b5fa3c54f6036e9b39f9d06be1806294210a499b9e8"
-dependencies = [
- "proc-macro2",
- "quote",
- "rustc_version",
- "syn 2.0.90",
 ]
 
 [[package]]
