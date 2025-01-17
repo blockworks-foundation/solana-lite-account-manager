@@ -312,7 +312,7 @@ pub fn get_token_program_account_type(
     }
 }
 
-pub fn token_account_to_solana_account(
+pub fn token_account_to_account_data(
     token_account: &TokenAccount,
     updated_slot: u64,
     write_version: u64,
@@ -412,7 +412,7 @@ pub fn token_account_to_solana_account(
     })
 }
 
-pub fn token_mint_to_solana_account(
+pub fn token_mint_to_account_data(
     mint_account: &MintAccount,
     updated_slot: u64,
     write_version: u64,
@@ -476,7 +476,7 @@ pub fn token_mint_to_spl_token_mint(
     updated_slot: u64,
     write_version: u64,
 ) -> Mint {
-    let mint_account_data = token_mint_to_solana_account(mint_account, updated_slot, write_version);
+    let mint_account_data = token_mint_to_account_data(mint_account, updated_slot, write_version);
     let mint =
         spl_token::state::Mint::unpack_unchecked(mint_account_data.account.data.data().as_ref())
             .map(Mint::TokenMint)
@@ -488,7 +488,7 @@ pub fn token_mint_to_spl_token_mint(
     mint
 }
 
-pub fn token_multisig_to_solana_account(
+pub fn token_multisig_to_account_data(
     multisig: &MultiSig,
     pubkey: Pubkey,
     updated_slot: u64,
@@ -540,7 +540,7 @@ pub fn token_multisig_to_solana_account(
     }
 }
 
-pub fn token_program_account_to_solana_account(
+pub fn token_program_account_to_account_data(
     token_program_account: &TokenProgramAccountType,
     updated_slot: u64,
     write_version: u64,
@@ -548,15 +548,15 @@ pub fn token_program_account_to_solana_account(
 ) -> Option<AccountData> {
     match token_program_account {
         TokenProgramAccountType::TokenAccount(tok_acc) => {
-            token_account_to_solana_account(tok_acc, updated_slot, write_version, mints_by_index)
+            token_account_to_account_data(tok_acc, updated_slot, write_version, mints_by_index)
         }
-        TokenProgramAccountType::Mint(mint_account) => Some(token_mint_to_solana_account(
+        TokenProgramAccountType::Mint(mint_account) => Some(token_mint_to_account_data(
             mint_account,
             updated_slot,
             write_version,
         )),
         TokenProgramAccountType::MultiSig(multisig, pubkey) => Some(
-            token_multisig_to_solana_account(multisig, *pubkey, updated_slot, write_version),
+            token_multisig_to_account_data(multisig, *pubkey, updated_slot, write_version),
         ),
         TokenProgramAccountType::Deleted(_) => None,
     }
