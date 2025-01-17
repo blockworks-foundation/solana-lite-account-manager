@@ -1,17 +1,16 @@
-use std::str::FromStr;
 use std::time::Duration;
 
 use anyhow::{anyhow, bail, Context};
-use lazy_static::lazy_static;
 use log::{debug, trace, warn};
-use regex::Regex;
 use reqwest::redirect::Policy;
 use reqwest::{Client, StatusCode};
 use solana_runtime::snapshot_hash::SnapshotHash;
 use solana_sdk::clock::Slot;
-use solana_sdk::hash::Hash;
 use tokio::task;
 
+use crate::solana::{
+    parse_full_snapshot_archive_filename, parse_incremental_snapshot_archive_filename,
+};
 use crate::HostUrl;
 
 #[derive(Debug)]
@@ -34,11 +33,6 @@ pub struct IncrementalSnapshot {
     pub hash: SnapshotHash,
 }
 
-lazy_static! {
-    // 5 captures
-    static ref REGEX_INCREMENTAL_SNAPSHOT_RESOURCE: Regex = Regex::from_str(r"/incremental-snapshot-([0-9]+)-([0-9]+)-([0-9a-zA-Z]+)\.tar\.(.+)").unwrap();
-}
-
 // find snapshot for exact slot
 pub async fn find_full_snapshot(
     hosts: impl IntoIterator<Item = HostUrl>,
@@ -49,30 +43,22 @@ pub async fn find_full_snapshot(
     let mut snapshots = Vec::with_capacity(hosts_and_uris.len());
 
     for (host, uri) in hosts_and_uris {
-        // TODOuse REGEX
-        if let Some(data) = uri
-            .strip_prefix("/snapshot-")
-            .and_then(|s| s.strip_suffix(".tar.zst"))
+        if let Ok((full_slot, hash, _archive_format)) =
+            parse_full_snapshot_archive_filename(trim_trailing_slash(&uri))
         {
             trace!("checking full snapshot uri part: {}", uri);
-            let parts: Vec<&str> = data.split('-').collect();
 
-            if parts.len() == 2 {
-                let full_slot = parts[0].parse::<u64>().unwrap();
-
-                debug!("{} has full snapshot of {}", &host, full_slot);
-                if full_slot != slot {
-                    continue;
-                }
-
-                let hash = SnapshotHash(Hash::from_str(parts[1]).unwrap());
-                snapshots.push(FullSnapshot {
-                    host: host.clone(),
-                    url_path: uri,
-                    slot: full_slot,
-                    hash,
-                })
+            debug!("{} has full snapshot of {}", &host, full_slot);
+            if full_slot != slot {
+                continue;
             }
+
+            snapshots.push(FullSnapshot {
+                host: host.clone(),
+                url_path: uri,
+                slot: full_slot,
+                hash,
+            })
         }
     }
 
@@ -80,47 +66,6 @@ pub async fn find_full_snapshot(
         .into_iter()
         .max_by(|left, right| left.slot.cmp(&right.slot))
         .ok_or_else(|| anyhow!("Unable to find full snapshot at slot {}", slot))
-}
-
-// TODO remove
-pub async fn __latest_full_snapshot(
-    hosts: impl IntoIterator<Item = HostUrl>,
-    not_before_slot: Slot,
-) -> anyhow::Result<FullSnapshot> {
-    let hosts_and_uris = collect_redirects(hosts, "snapshot.tar.bz2").await?;
-
-    let mut snapshots = Vec::with_capacity(hosts_and_uris.len());
-
-    for (host, uri) in hosts_and_uris {
-        if let Some(data) = uri
-            .strip_prefix("/snapshot-")
-            .and_then(|s| s.strip_suffix(".tar.zst"))
-        {
-            let parts: Vec<&str> = data.split('-').collect();
-
-            if parts.len() == 2 {
-                let full_slot = parts[0].parse::<u64>().unwrap();
-
-                debug!("{} has snapshot of {}", &host, full_slot);
-                // if full_slot < not_before_slot {
-                //     continue;
-                // }
-
-                let hash = SnapshotHash(Hash::from_str(parts[1]).unwrap());
-                snapshots.push(FullSnapshot {
-                    host: host.clone(),
-                    url_path: uri,
-                    slot: full_slot,
-                    hash,
-                })
-            }
-        }
-    }
-
-    snapshots
-        .into_iter()
-        .max_by(|left, right| left.slot.cmp(&right.slot))
-        .ok_or_else(|| anyhow!("Unable to find full snapshot after {}", not_before_slot))
 }
 
 pub async fn find_latest_incremental_snapshot(
@@ -131,39 +76,22 @@ pub async fn find_latest_incremental_snapshot(
     let mut snapshots = Vec::with_capacity(hosts_and_uris.len());
     for (host, uri) in hosts_and_uris {
         trace!("checking incremental snapshot uri part: {}", uri);
-        // e.g. /incremental-snapshot-311178098-311179186-9shdweKVo16BKtuoguep81NKQ7GtDDFEKx5kCcRC9WR9.tar.zst
 
-        if let Some(capture) = REGEX_INCREMENTAL_SNAPSHOT_RESOURCE.captures(&uri) {
-            if capture.len() != 5 {
-                warn!("Invalid incremental snapshot filename: {:?}", &capture);
-                continue;
-            } else {
-                let full_slot = capture
-                    .get(1)
-                    .expect("full slot")
-                    .as_str()
-                    .parse::<u64>()
-                    .unwrap();
-                let incremental_slot = capture
-                    .get(2)
-                    .expect("incremental slot")
-                    .as_str()
-                    .parse::<u64>()
-                    .unwrap();
+        if let Ok((full_slot, incremental_slot, hash, _archive_format)) =
+            parse_incremental_snapshot_archive_filename(trim_trailing_slash(&uri))
+        {
+            debug!(
+                "{} has incremental snapshot of {} based on {}",
+                &host, incremental_slot, full_slot
+            );
 
-                debug!("{} has incremental snapshot of {}", &host, incremental_slot);
-
-                // base58 coded hash
-                let hash =
-                    SnapshotHash(Hash::from_str(capture.get(3).expect("hash").as_str()).unwrap());
-                snapshots.push(IncrementalSnapshot {
-                    host: host.clone(),
-                    url_path: uri,
-                    full_slot,
-                    incremental_slot,
-                    hash,
-                })
-            }
+            snapshots.push(IncrementalSnapshot {
+                host: host.clone(),
+                url_path: uri,
+                full_slot,
+                incremental_slot,
+                hash,
+            })
         } else {
             warn!("Invalid incremental snapshot uri: {}", uri);
         }
@@ -229,6 +157,7 @@ pub(crate) async fn collect_redirects(
     for task in tasks {
         match task.await {
             Ok(Ok((host, response))) => {
+                // response contains leading slash: "/incremental-snapshot-307019864-307043916-9r7T1mzsE8Zwha8kp3eyTwCNF63ZPW6SVgqjQMecK8zj.tar.zst"
                 result.push((host.clone(), response));
             }
             Ok(Err(e)) => {
@@ -243,15 +172,13 @@ pub(crate) async fn collect_redirects(
     anyhow::Ok(result)
 }
 
+fn trim_trailing_slash(uri: &str) -> &str {
+    assert!(uri.starts_with('/'));
+    &uri[1..]
+}
+
 #[test]
-fn test_resource_regex() {
-    let str = "/incremental-snapshot-311178098-311181414-BJWKnTQDPKDHuPQPrWdQrix3VEqShnotGRLmGpN9pPuq.tar.zst";
-    let capture = REGEX_INCREMENTAL_SNAPSHOT_RESOURCE.captures(str).unwrap();
-    assert_eq!(capture.get(1).unwrap().as_str(), "311178098");
-    assert_eq!(capture.get(2).unwrap().as_str(), "311181414");
-    assert_eq!(
-        capture.get(3).unwrap().as_str(),
-        "BJWKnTQDPKDHuPQPrWdQrix3VEqShnotGRLmGpN9pPuq"
-    );
-    assert_eq!(capture.get(4).unwrap().as_str(), "zst");
+fn test_trim_trailing_slash() {
+    assert_eq!(trim_trailing_slash("/abc"), "abc");
+    assert_eq!(trim_trailing_slash("/"), "");
 }

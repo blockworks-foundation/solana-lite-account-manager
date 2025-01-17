@@ -15,6 +15,8 @@
 // This file contains code vendored from https://github.com/solana-labs/solana
 
 use bincode::Options;
+use lazy_static::lazy_static;
+use regex::Regex;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use solana_accounts_db::account_storage::meta::StoredMetaWriteVersion;
@@ -23,6 +25,11 @@ use solana_accounts_db::ancestors::AncestorsForSerialization;
 use solana_accounts_db::blockhash_queue::BlockhashQueue;
 use solana_frozen_abi_macro::AbiExample;
 use solana_runtime::epoch_stakes::EpochStakes;
+use solana_runtime::snapshot_hash::SnapshotHash;
+use solana_runtime::snapshot_utils::{
+    ArchiveFormat, SnapshotError, FULL_SNAPSHOT_ARCHIVE_FILENAME_REGEX,
+    INCREMENTAL_SNAPSHOT_ARCHIVE_FILENAME_REGEX,
+};
 use solana_runtime::stakes::Stakes;
 use solana_sdk::clock::{Epoch, UnixTimestamp};
 use solana_sdk::deserialize_utils::default_on_eof;
@@ -37,10 +44,6 @@ use solana_sdk::slot_history::Slot;
 use solana_sdk::stake::state::Delegation;
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
-use lazy_static::lazy_static;
-use regex::Regex;
-use solana_runtime::snapshot_hash::SnapshotHash;
-use solana_runtime::snapshot_utils::{ArchiveFormat, INCREMENTAL_SNAPSHOT_ARCHIVE_FILENAME_REGEX, SnapshotError};
 
 const MAX_STREAM_SIZE: u64 = 32 * 1024 * 1024 * 1024;
 
@@ -130,6 +133,36 @@ pub struct SerializableAccountStorageEntry {
     pub accounts_current_len: usize,
 }
 
+pub fn parse_full_snapshot_archive_filename(
+    archive_filename: &str,
+) -> solana_runtime::snapshot_utils::Result<(Slot, SnapshotHash, ArchiveFormat)> {
+    lazy_static! {
+        static ref RE: Regex = Regex::new(FULL_SNAPSHOT_ARCHIVE_FILENAME_REGEX).unwrap();
+    }
+
+    let do_parse = || {
+        RE.captures(archive_filename).and_then(|captures| {
+            let slot = captures
+                .name("slot")
+                .map(|x| x.as_str().parse::<Slot>())?
+                .ok()?;
+            let hash = captures
+                .name("hash")
+                .map(|x| x.as_str().parse::<Hash>())?
+                .ok()?;
+            let archive_format = captures
+                .name("ext")
+                .map(|x| x.as_str().parse::<ArchiveFormat>())?
+                .ok()?;
+
+            Some((slot, SnapshotHash(hash), archive_format))
+        })
+    };
+
+    do_parse().ok_or_else(|| {
+        SnapshotError::ParseSnapshotArchiveFileNameError(archive_filename.to_string())
+    })
+}
 
 pub fn parse_incremental_snapshot_archive_filename(
     archive_filename: &str,

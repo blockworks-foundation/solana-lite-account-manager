@@ -9,8 +9,8 @@ use tokio::sync::mpsc;
 use tokio::sync::mpsc::Receiver;
 use tokio::task::JoinHandle;
 
-use lite_account_manager_common::account_data::{Account, AccountData, Data};
 use crate::append_vec::StoredAccountMeta;
+use lite_account_manager_common::account_data::{Account, AccountData, Data};
 
 use crate::archived::ArchiveSnapshotExtractor;
 use crate::core::{append_vec_iter, SnapshotExtractor};
