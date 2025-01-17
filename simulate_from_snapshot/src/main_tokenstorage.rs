@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::time::Duration;
 use std::{env, path::PathBuf, str::FromStr, sync::Arc};
 
-use crate::grpc_source::{all_accounts, process_stream};
 use clap::Parser;
 use cli::Args;
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task_with_mpsc;
@@ -13,19 +12,17 @@ use lite_account_manager_common::{
     commitment::Commitment,
     slot_info::SlotInfo,
 };
-use lite_account_storage::accountsdb::AccountsDb;
 use lite_accounts_from_snapshot::import::import_archive;
 use lite_token_account_storage::{
     inmemory_token_account_storage::InmemoryTokenAccountStorage,
     inmemory_token_storage::TokenProgramAccountsStorage,
 };
-use log::info;
+use log::{info, warn};
 use quic_geyser_common::{filters::Filter, types::connections_parameters::ConnectionParameters};
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::pubkey::Pubkey;
-use tokio::sync::broadcast;
-use tower::util::Optional;
+use tokio::task::JoinHandle;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::{
     SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeRequestFilterSlots,
@@ -58,7 +55,6 @@ async fn main() {
         TokenProgramAccountsStorage::new(token_account_storage.clone()),
     );
 
-
     // load accounts from snapshot
     let token_storage = token_storage.clone();
     let archive_path = PathBuf::from_str(snapshot_archive_path.as_str()).unwrap();
@@ -75,9 +71,10 @@ async fn main() {
             continue;
         }
 
-        if account.data.len() != 82 {
-            continue;
-        }
+        // load only mints from snapshot
+        // if account.data.len() != 82 {
+        //     continue;
+        // }
 
         if account.data.len() != 82 {
             num_token_accounts += 1;
@@ -100,7 +97,11 @@ async fn main() {
             write_version: 0,
         });
         if (num_token_accounts + num_mint_accounts) % 100_000 == 0 {
-            log::info!("{} spl token and {} mint accounts loaded", num_token_accounts, num_mint_accounts);
+            log::info!(
+                "{} spl token and {} mint accounts loaded",
+                num_token_accounts,
+                num_mint_accounts
+            );
         }
     }
 
@@ -108,7 +109,6 @@ async fn main() {
         "Storage Initialized with snapshot, {} spl program accounts loaded",
         num_token_accounts + num_mint_accounts
     );
-
 
     if let Some(quic_url) = quic_url {
         info!("Using quic source on {}", quic_url);
@@ -121,7 +121,8 @@ async fn main() {
             grpc_addr,
             grpc_x_token.is_some()
         );
-        stream_accounts_from_yellowstone_grpc(grpc_addr, grpc_x_token, token_storage.clone());
+        let _jh =
+            stream_accounts_from_yellowstone_grpc(grpc_addr, grpc_x_token, token_storage.clone());
     }
 
     let rpc_server = RpcServerImpl::new(token_storage.clone(), Some(token_storage));
@@ -215,7 +216,7 @@ fn stream_accounts_from_yellowstone_grpc(
     grpc_addr: String,
     grpc_x_token: Option<String>,
     token_storage: Arc<TokenProgramAccountsStorage>,
-) {
+) -> JoinHandle<()> {
     use geyser_grpc_connector::Message;
 
     tokio::spawn(async move {
@@ -244,7 +245,7 @@ fn stream_accounts_from_yellowstone_grpc(
             exit_rx.resubscribe(),
         );
 
-        loop {
+        'recv_loop: loop {
             let message = geyser_rx.recv().await;
             match message {
                 Some(Message::GeyserSubscribeUpdate(update)) => match update.update_oneof {
@@ -295,51 +296,48 @@ fn stream_accounts_from_yellowstone_grpc(
                             commitment,
                         );
                     }
-                    _ => {}
+                    _ => {
+                        // message not interesting
+                    }
                 },
-                _ => {
-                    //not supported
+                Some(Message::Connecting(attempt)) => {
+                    if attempt > 1 {
+                        warn!("geyser grpc is reconnecting");
+                    }
+                }
+                None => {
+                    // stream ended
+                    break 'recv_loop;
                 }
             }
-        }
+        } // -- recv loop
 
-        println!("stopping geyser stream");
         log::error!("stopping geyser stream");
-    });
+    })
 }
 
 /// 1. slots with all commitment levels
 /// 2. spl accounts (token+mints) of spl-token and spl-token-2022 program, commitment level is processed (avoids buffering in yellowstone geyser plugin)
 fn all_slots_and_accounts_together() -> SubscribeRequest {
-    let slot_subs: HashMap<String, SubscribeRequestFilterSlots> =
-        HashMap::from(
-            [(
-                "sub_slots_all_commitment_levels".to_string(),
-                SubscribeRequestFilterSlots {
-                    // implies all slots
-                    filter_by_commitment: None,
-                },
-            )]
-        );
-    let account_subs: HashMap<String, SubscribeRequestFilterAccounts> =
-        HashMap::from(
-            [(
-                "sub_spl_accounts".to_string(),
-                SubscribeRequestFilterAccounts {
-                    account: vec![],
-                    owner: vec![
-                        spl_token::ID.to_string(),
-                        spl_token_2022::ID.to_string(),
-                    ],
-                    filters: vec![],
-                },
-            )]
-        );
+    let slot_subs: HashMap<String, SubscribeRequestFilterSlots> = HashMap::from([(
+        "sub_slots_all_commitment_levels".to_string(),
+        SubscribeRequestFilterSlots {
+            // implies all slots
+            filter_by_commitment: None,
+        },
+    )]);
+    let account_subs: HashMap<String, SubscribeRequestFilterAccounts> = HashMap::from([(
+        "sub_spl_accounts".to_string(),
+        SubscribeRequestFilterAccounts {
+            account: vec![],
+            owner: vec![spl_token::ID.to_string(), spl_token_2022::ID.to_string()],
+            filters: vec![],
+        },
+    )]);
 
     SubscribeRequest {
         slots: slot_subs,
         accounts: account_subs,
-        ping: None,
         // implies "processed"
         commitment: None,
         ..Default::default()
