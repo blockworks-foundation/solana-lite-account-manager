@@ -2687,7 +2687,6 @@ dependencies = [
  "serde_json",
  "solana-accounts-db",
  "solana-download-utils",
- "solana-frozen-abi-macro",
  "solana-logger",
  "solana-runtime",
  "solana-sdk",
@@ -2742,7 +2741,6 @@ dependencies = [
  "solana-account-decoder",
  "solana-accounts-db",
  "solana-client",
- "solana-frozen-abi-macro",
  "solana-rpc-client-api",
  "solana-runtime",
  "solana-sdk",
@@ -4937,18 +4935,6 @@ dependencies = [
  "reqwest 0.11.27",
  "solana-runtime",
  "solana-sdk",
-]
-
-[[package]]
-name = "solana-frozen-abi-macro"
-version = "2.0.16"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "171f028449b1020844958b5fa3c54f6036e9b39f9d06be1806294210a499b9e8"
-dependencies = [
- "proc-macro2",
- "quote",
- "rustc_version",
- "syn 2.0.90",
 ]
 
 [[package]]

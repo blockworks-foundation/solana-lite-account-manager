@@ -20,7 +20,6 @@ lite-accounts-from-snapshot = { workspace = true}
 solana-sdk = {workspace = true}
 solana-client = {workspace = true}
 solana-accounts-db = {workspace = true}
-solana-frozen-abi-macro = {workspace = true}
 solana-runtime = {workspace = true}
 solana-rpc-client-api = { workspace = true }
 solana-account-decoder = { workspace = true }

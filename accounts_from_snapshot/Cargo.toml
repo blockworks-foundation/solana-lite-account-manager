@@ -10,8 +10,7 @@ publish = false
 [dependencies]
 lite-account-manager-common = { workspace = true }
 
-solana-download-utils = "~2.0.16"
-solana-frozen-abi-macro = { workspace = true }
+solana-download-utils = { workspace = true }
 solana-runtime = { workspace = true }
 solana-logger = { workspace = true }
 solana-sdk = { workspace = true }

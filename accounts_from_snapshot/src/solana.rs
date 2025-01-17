@@ -23,7 +23,6 @@ use solana_accounts_db::account_storage::meta::StoredMetaWriteVersion;
 use solana_accounts_db::accounts_db::BankHashStats;
 use solana_accounts_db::ancestors::AncestorsForSerialization;
 use solana_accounts_db::blockhash_queue::BlockhashQueue;
-use solana_frozen_abi_macro::AbiExample;
 use solana_runtime::epoch_stakes::EpochStakes;
 use solana_runtime::snapshot_hash::SnapshotHash;
 use solana_runtime::snapshot_utils::{
@@ -104,7 +103,8 @@ pub struct DeserializableVersionedBank {
     pub is_delta: bool,
 }
 
-#[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq, AbiExample)]
+// removed AbiExample
+#[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BankHashInfo {
     pub hash: Hash,
     pub snapshot_hash: Hash,

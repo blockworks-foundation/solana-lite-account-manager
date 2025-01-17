@@ -29,6 +29,7 @@ solana-accounts-db = "~2.0.16"
 solana-frozen-abi-macro = "~2.0.16"
 solana-runtime = "~2.0.16"
 solana-rpc-client-api = "~2.0.16"
+solana-download-utils = "~2.0.16"
 
 async-trait = "0.1.68"
 dashmap = "5.4.0"
