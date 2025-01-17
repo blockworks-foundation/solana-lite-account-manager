@@ -74,13 +74,12 @@ async fn main() {
     process_slot_updates(db.clone(), slots_rx);
     start_backfill(slot.info.slot, db.clone());
 
-    let rpc_server = RpcServerImpl::new(db.clone());
+    let rpc_server = RpcServerImpl::new(db.clone(), None);
 
     info!("Storage Initialized with snapshot");
-    let jh = RpcServerImpl::start_serving(rpc_server, 10700)
+    RpcServerImpl::start_serving(rpc_server, 10700)
         .await
         .unwrap();
-    let _ = jh.await;
 }
 
 fn process_slot_updates(

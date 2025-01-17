@@ -1,22 +1,27 @@
+use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::Context;
 use base64::Engine;
 use itertools::Itertools;
 use jsonrpsee::server::ServerBuilder;
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use lite_account_manager_common::account_filter::AccountFilterType as AmAccountFilterType;
-use lite_account_manager_common::account_store_interface::AccountStorageInterface;
+use lite_account_manager_common::account_store_interface::{
+    AccountLoadingError, AccountStorageInterface, Mint, TokenProgramAccountData,
+    TokenProgramAccountStorageInterface, TokenProgramType,
+};
 use lite_account_manager_common::{account_data::AccountData, commitment::Commitment};
-use solana_account_decoder::UiAccount;
+use solana_account_decoder::parse_account_data::{AccountAdditionalDataV2, SplTokenAdditionalData};
+use solana_account_decoder::{UiAccount, UiAccountEncoding};
 use solana_rpc_client_api::client_error::reqwest::Method;
 use solana_rpc_client_api::{
     config::{RpcAccountInfoConfig, RpcProgramAccountsConfig},
     response::{OptionalContext, Response as RpcResponse, RpcKeyedAccount, RpcResponseContext},
 };
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey};
-use tokio::task::JoinHandle;
 use tower_http::cors::{Any, CorsLayer};
 
 #[rpc(server)]
@@ -41,17 +46,21 @@ pub trait TestRpc {
 
 pub struct RpcServerImpl {
     storage: Arc<dyn AccountStorageInterface>,
+    token_program_account_storage: Option<Arc<dyn TokenProgramAccountStorageInterface>>,
 }
 
 impl RpcServerImpl {
-    pub fn new(storage: Arc<dyn AccountStorageInterface>) -> Self {
-        Self { storage }
+    pub fn new(
+        storage: Arc<dyn AccountStorageInterface>,
+        program_account_storage: Option<Arc<dyn TokenProgramAccountStorageInterface>>,
+    ) -> Self {
+        Self {
+            storage,
+            token_program_account_storage: program_account_storage,
+        }
     }
 
-    pub async fn start_serving(
-        rpc_impl: RpcServerImpl,
-        port: u16,
-    ) -> anyhow::Result<JoinHandle<()>> {
+    pub async fn start_serving(rpc_impl: RpcServerImpl, port: u16) -> anyhow::Result<()> {
         let http_addr = format!("[::]:{port}");
         let cors = CorsLayer::new()
             .max_age(Duration::from_secs(86400))
@@ -70,15 +79,15 @@ impl RpcServerImpl {
             .max_response_body_size(512 * 1024 * 1024) // 512 MBs
             .http_only()
             .build(http_addr.clone())
-            .await?
+            .await
+            .context("failed binding RPC server, bind address may be occupied")?
             .start(rpc_impl.into_rpc());
 
-        let jh = tokio::spawn(async move {
-            log::info!("HTTP Server started at {http_addr:?}");
-            http_server_handle.stopped().await;
-            log::error!("QUIC GEYSER PLUGIN HTTP SERVER STOPPED");
-        });
-        Ok(jh)
+        log::info!("RPC server started at {http_addr:?}");
+        http_server_handle.stopped().await;
+        log::error!("RPC HTTP SERVER STOPPED");
+
+        Ok(())
     }
 }
 
@@ -89,9 +98,11 @@ impl TestRpcServer for RpcServerImpl {
         program_id_str: String,
         config: Option<RpcProgramAccountsConfig>,
     ) -> RpcResult<OptionalContext<Vec<RpcKeyedAccount>>> {
-        let Ok(program_id) = Pubkey::from_str(&program_id_str) else {
-            return Err(jsonrpsee::types::error::ErrorCode::InvalidParams.into());
-        };
+        let program_type: TokenProgramType = Pubkey::from_str(&program_id_str)
+            .map_err(|_| ())
+            .and_then(|pubkey| TokenProgramType::try_from(&pubkey))
+            .map_err(|_| jsonrpsee::types::error::ErrorCode::InvalidParams)?;
+
         let with_context = config
             .as_ref()
             .map(|value| value.with_context.unwrap_or_default())
@@ -104,56 +115,70 @@ impl TestRpcServer for RpcServerImpl {
 
         let account_filters = config
             .as_ref()
-            .map(|x| {
-                x.filters
-                    .as_ref()
-                    .map(|filters| filters.iter().map(AmAccountFilterType::from).collect_vec())
-            })
-            .unwrap_or_default();
-
+            .and_then(|x| x.filters.as_ref())
+            .map(|filters| filters.iter().map(AmAccountFilterType::from).collect_vec());
         let commitment = Commitment::from(commitment);
 
-        let gpa = self
-            .storage
-            .get_program_accounts(program_id, account_filters, commitment)
+        let (program_accounts, token_account_mints) =
+            if let Some(storage) = self.token_program_account_storage.as_ref() {
+                storage.get_program_accounts_with_mints(
+                    program_type.clone(),
+                    account_filters.clone(),
+                    commitment,
+                )
+            } else {
+                self.storage
+                    .get_program_accounts(*program_type.as_ref(), account_filters, commitment)
+                    .map(|accounts| {
+                        (
+                            accounts
+                                .into_iter()
+                                .map(TokenProgramAccountData::OtherAccount)
+                                .collect_vec(),
+                            HashMap::with_capacity(0),
+                        )
+                    })
+            }
             .map_err(|e| {
                 log::error!("get_program_accounts: {}", e);
-                jsonrpsee::types::error::ErrorCode::InternalError
+                account_loading_error_to_jsonrpsee_error(e)
             })?;
-        log::debug!("get_program_accounts: found {} accounts", gpa.len());
+        log::debug!(
+            "get_program_accounts: found {} accounts",
+            program_accounts.len()
+        );
         let min_context_slot = config
             .as_ref()
-            .map(|c| {
+            .and_then(|c| {
                 if c.with_context.unwrap_or_default() {
                     c.account_config.min_context_slot
                 } else {
                     None
                 }
             })
-            .unwrap_or_default()
             .unwrap_or_default();
 
-        let slot = gpa
+        let slot = program_accounts
             .iter()
             .map(|program_account| program_account.updated_slot)
             .max()
             .unwrap_or_default();
-        let acc_config = config.map(|c| c.account_config);
 
-        let rpc_keyed_accounts = gpa
+        let request_account_config = config.map(|c| c.account_config);
+
+        let rpc_keyed_accounts = program_accounts
             .iter()
-            .filter_map(|account_data| {
-                if account_data.updated_slot >= min_context_slot {
-                    Some(RpcKeyedAccount {
-                        pubkey: account_data.pubkey.to_string(),
-                        account: convert_account_data_to_ui_account(
-                            account_data,
-                            acc_config.clone(),
-                        ),
-                    })
-                } else {
-                    None
-                }
+            .filter(|account_data| account_data.updated_slot >= min_context_slot)
+            .map(|account_data| RpcKeyedAccount {
+                pubkey: account_data.pubkey.to_string(),
+                account: convert_account_data_to_ui_account(
+                    account_data,
+                    request_account_config.clone(),
+                    convert_token_program_account_data_to_additional_data(
+                        account_data,
+                        &token_account_mints,
+                    ),
+                ),
             })
             .collect_vec();
 
@@ -191,45 +216,106 @@ impl TestRpcServer for RpcServerImpl {
             .clone()
             .and_then(|x| x.commitment)
             .unwrap_or_default();
-        let acc = self
-            .storage
-            .get_account(account_pk, Commitment::from(commitment))
-            .map_err(|_| jsonrpsee::types::error::ErrorCode::InternalError)?;
 
-        match acc {
-            Some(acc) => Ok(RpcResponse {
+        let get_account_result = if let Some(storage) = self.token_program_account_storage.as_ref()
+        {
+            storage.get_account_with_mint(account_pk, Commitment::from(commitment))
+        } else {
+            self.storage
+                .get_account(account_pk, Commitment::from(commitment))
+                .map(|account| {
+                    account.map(|account_data| {
+                        (TokenProgramAccountData::OtherAccount(account_data), None)
+                    })
+                })
+        }
+        .map_err(|e| {
+            log::error!("get_account_info: {}", e);
+            account_loading_error_to_jsonrpsee_error(e)
+        })?;
+
+        Ok(get_account_result
+            .map(|(account_data, token_account_mint)| RpcResponse {
                 context: RpcResponseContext {
-                    slot: acc.updated_slot,
+                    slot: account_data.updated_slot,
                     api_version: None,
                 },
-                value: Some(convert_account_data_to_ui_account(&acc, config)),
-            }),
-            None => Ok(RpcResponse {
+                value: Some(convert_account_data_to_ui_account(
+                    &account_data,
+                    config,
+                    convert_mint_to_additional_data(token_account_mint.as_ref()),
+                )),
+            })
+            .ok_or_else(|| RpcResponse {
                 context: RpcResponseContext {
                     slot: 0,
                     api_version: None,
                 },
                 value: None,
-            }),
-        }
+            })
+            .unwrap_or_else(|res| res))
     }
 }
 
-pub fn convert_account_data_to_ui_account(
+fn convert_account_data_to_ui_account(
     account_data: &AccountData,
     config: Option<RpcAccountInfoConfig>,
+    additional_data: Option<AccountAdditionalDataV2>,
 ) -> UiAccount {
     let encoding = config
         .as_ref()
-        .map(|c| c.encoding)
-        .unwrap_or_default()
-        .unwrap_or(solana_account_decoder::UiAccountEncoding::Base64);
+        .and_then(|cfg| cfg.encoding)
+        .unwrap_or(UiAccountEncoding::Base64);
     let data_slice = config.as_ref().map(|c| c.data_slice).unwrap_or_default();
     UiAccount::encode(
         &account_data.pubkey,
         &account_data.account.to_solana_account(),
         encoding,
-        None,
+        additional_data,
         data_slice,
     )
+}
+
+fn convert_token_program_account_data_to_additional_data(
+    token_program_account_data: &TokenProgramAccountData,
+    token_account_mints: &HashMap<Pubkey, Mint>,
+) -> Option<AccountAdditionalDataV2> {
+    if let TokenProgramAccountData::TokenAccount(token_account) = token_program_account_data {
+        convert_mint_to_additional_data(token_account_mints.get(&token_account.mint_pubkey))
+    } else {
+        None
+    }
+}
+
+fn convert_mint_to_additional_data(
+    token_account_mint: Option<&Mint>,
+) -> Option<AccountAdditionalDataV2> {
+    token_account_mint.as_ref().map(|mint| {
+        let decimals = match mint {
+            Mint::TokenMint(mint) => mint.decimals,
+            Mint::Token2022Mint(mint) => mint.decimals,
+        };
+        AccountAdditionalDataV2 {
+            spl_token_additional_data: Some(SplTokenAdditionalData {
+                decimals,
+                ..Default::default()
+            }),
+        }
+    })
+}
+
+fn account_loading_error_to_jsonrpsee_error(
+    e: AccountLoadingError,
+) -> jsonrpsee::types::error::ErrorCode {
+    match e {
+        AccountLoadingError::AccountNotFound => jsonrpsee::types::error::ErrorCode::InvalidParams,
+        AccountLoadingError::ShouldContainAnAccountFilter => {
+            jsonrpsee::types::error::ErrorCode::InvalidParams
+        }
+        AccountLoadingError::WrongIndex => jsonrpsee::types::error::ErrorCode::InvalidParams,
+        AccountLoadingError::TokenAccountsCannotUseThisFilter => {
+            jsonrpsee::types::error::ErrorCode::InvalidParams
+        }
+        _ => jsonrpsee::types::error::ErrorCode::InternalError,
+    }
 }

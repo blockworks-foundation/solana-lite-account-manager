@@ -4,14 +4,16 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-solana-sdk = {workspace = true}
-solana-rpc-client-api = {workspace = true}
-itertools = {workspace = true}
-lz4 = {workspace = true}
-zstd = {workspace = true}
-serde = {workspace = true}
-serde_json = {workspace = true}
-bs58 = {workspace = true}
-base64 = {workspace = true}
-anyhow = {workspace = true}
-log = {workspace = true}
+solana-sdk = { workspace = true }
+solana-rpc-client-api = { workspace = true }
+spl-token = { workspace = true }
+spl-token-2022 = { workspace = true }
+itertools = { workspace = true }
+lz4 = { workspace = true }
+zstd = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+bs58 = { workspace = true }
+base64 = { workspace = true }
+anyhow = { workspace = true }
+log = { workspace = true }

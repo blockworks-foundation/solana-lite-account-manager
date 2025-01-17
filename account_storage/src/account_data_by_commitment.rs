@@ -69,7 +69,7 @@ impl AccountDataByCommitment {
 
         // check size filter first before decompressing
         for filter in filters {
-            if let AccountFilterType::Datasize(size) = filter {
+            if let AccountFilterType::DataSize(size) = filter {
                 if account_data.account.data.len() as u64 != *size {
                     return None;
                 }
@@ -610,13 +610,13 @@ mod tests {
         let data = create_account_data(slot, 1);
 
         account_data_by_commitment.update(data.clone(), Commitment::Processed);
-        let filters = vec![AccountFilterType::Datasize(32)];
+        let filters = vec![AccountFilterType::DataSize(32)];
         assert_eq!(
             account_data_by_commitment.get_account_data_filtered(Commitment::Processed, &filters),
             Some(data.clone())
         );
 
-        let filters = vec![AccountFilterType::Datasize(64)];
+        let filters = vec![AccountFilterType::DataSize(64)];
         assert_eq!(
             account_data_by_commitment.get_account_data_filtered(Commitment::Processed, &filters),
             None

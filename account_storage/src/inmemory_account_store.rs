@@ -306,7 +306,7 @@ impl AccountStorageInterface for InmemoryAccountStore {
             program_id: Some(program_pubkey),
             filters: account_filters.clone(),
         }) {
-            return Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters);
+            return Err(AccountLoadingError::ConfigDoesNotContainRequiredFilters);
         }
         let lk = match self.accounts_by_owner.entry(program_pubkey) {
             dashmap::mapref::entry::Entry::Occupied(occ) => occ.get().clone(),
@@ -1057,7 +1057,7 @@ mod tests {
         let gpa_2 = store
             .get_program_accounts(
                 prog_1,
-                Some(vec![AccountFilterType::Datasize(100)]),
+                Some(vec![AccountFilterType::DataSize(100)]),
                 Commitment::Finalized,
             )
             .unwrap()
@@ -1117,7 +1117,7 @@ mod tests {
         let gpa = store
             .get_program_accounts(
                 prog_1,
-                Some(vec![AccountFilterType::Datasize(300)]),
+                Some(vec![AccountFilterType::DataSize(300)]),
                 Commitment::Finalized,
             )
             .unwrap()
@@ -1458,15 +1458,15 @@ mod tests {
         );
         assert_eq!(
             store.get_program_accounts(program_3, None, Commitment::Processed),
-            Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
+            Err(AccountLoadingError::ConfigDoesNotContainRequiredFilters)
         );
         assert_eq!(
             store.get_program_accounts(program_3, None, Commitment::Confirmed),
-            Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
+            Err(AccountLoadingError::ConfigDoesNotContainRequiredFilters)
         );
         assert_eq!(
             store.get_program_accounts(program_3, None, Commitment::Finalized),
-            Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
+            Err(AccountLoadingError::ConfigDoesNotContainRequiredFilters)
         );
 
         store.process_slot_data(new_slot_info(1), Commitment::Confirmed);
@@ -1734,15 +1734,15 @@ mod tests {
         );
         assert_eq!(
             store.get_program_accounts(program_3, None, Commitment::Processed),
-            Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
+            Err(AccountLoadingError::ConfigDoesNotContainRequiredFilters)
         );
         assert_eq!(
             store.get_program_accounts(program_3, None, Commitment::Confirmed),
-            Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
+            Err(AccountLoadingError::ConfigDoesNotContainRequiredFilters)
         );
         assert_eq!(
             store.get_program_accounts(program_3, None, Commitment::Finalized),
-            Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
+            Err(AccountLoadingError::ConfigDoesNotContainRequiredFilters)
         );
 
         store.process_slot_data(new_slot_info(5), Commitment::Confirmed);
@@ -1818,15 +1818,15 @@ mod tests {
         );
         assert_eq!(
             store.get_program_accounts(program_3, None, Commitment::Processed),
-            Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
+            Err(AccountLoadingError::ConfigDoesNotContainRequiredFilters)
         );
         assert_eq!(
             store.get_program_accounts(program_3, None, Commitment::Confirmed),
-            Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
+            Err(AccountLoadingError::ConfigDoesNotContainRequiredFilters)
         );
         assert_eq!(
             store.get_program_accounts(program_3, None, Commitment::Finalized),
-            Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
+            Err(AccountLoadingError::ConfigDoesNotContainRequiredFilters)
         );
 
         // accounts deleted as they do not satisfy filter criterias
@@ -1887,15 +1887,15 @@ mod tests {
         );
         assert_eq!(
             store.get_program_accounts(program_3, None, Commitment::Processed),
-            Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
+            Err(AccountLoadingError::ConfigDoesNotContainRequiredFilters)
         );
         assert_eq!(
             store.get_program_accounts(program_3, None, Commitment::Confirmed),
-            Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
+            Err(AccountLoadingError::ConfigDoesNotContainRequiredFilters)
         );
         assert_eq!(
             store.get_program_accounts(program_3, None, Commitment::Finalized),
-            Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
+            Err(AccountLoadingError::ConfigDoesNotContainRequiredFilters)
         );
 
         let account_2_slot6 = create_random_account(&mut rng, 6, pk2, program_1);
@@ -1961,15 +1961,15 @@ mod tests {
         );
         assert_eq!(
             store.get_program_accounts(program_3, None, Commitment::Processed),
-            Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
+            Err(AccountLoadingError::ConfigDoesNotContainRequiredFilters)
         );
         assert_eq!(
             store.get_program_accounts(program_3, None, Commitment::Confirmed),
-            Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
+            Err(AccountLoadingError::ConfigDoesNotContainRequiredFilters)
         );
         assert_eq!(
             store.get_program_accounts(program_3, None, Commitment::Finalized),
-            Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
+            Err(AccountLoadingError::ConfigDoesNotContainRequiredFilters)
         );
 
         store.process_slot_data(new_slot_info(6), Commitment::Confirmed);
@@ -2039,15 +2039,15 @@ mod tests {
         );
         assert_eq!(
             store.get_program_accounts(program_3, None, Commitment::Processed),
-            Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
+            Err(AccountLoadingError::ConfigDoesNotContainRequiredFilters)
         );
         assert_eq!(
             store.get_program_accounts(program_3, None, Commitment::Confirmed),
-            Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
+            Err(AccountLoadingError::ConfigDoesNotContainRequiredFilters)
         );
         assert_eq!(
             store.get_program_accounts(program_3, None, Commitment::Finalized),
-            Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
+            Err(AccountLoadingError::ConfigDoesNotContainRequiredFilters)
         );
 
         store.process_slot_data(new_slot_info(6), Commitment::Finalized);
@@ -2122,15 +2122,15 @@ mod tests {
         );
         assert_eq!(
             store.get_program_accounts(program_3, None, Commitment::Processed),
-            Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
+            Err(AccountLoadingError::ConfigDoesNotContainRequiredFilters)
         );
         assert_eq!(
             store.get_program_accounts(program_3, None, Commitment::Confirmed),
-            Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
+            Err(AccountLoadingError::ConfigDoesNotContainRequiredFilters)
         );
         assert_eq!(
             store.get_program_accounts(program_3, None, Commitment::Finalized),
-            Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
+            Err(AccountLoadingError::ConfigDoesNotContainRequiredFilters)
         );
     }
 

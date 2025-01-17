@@ -51,9 +51,8 @@ pub async fn main() {
     let snapshot_archive_path_file = PathBuf::from_str(&snapshot_archive_path).unwrap();
     let accounts_path = PathBuf::from_str(&accounts_path).unwrap();
 
-    let next_append_vec_id = Arc::new(AtomicU32::new(33000000));
-
     info!(
+
         "Loading from snapshot archive {}, unpacking to {} with accounts in {}",
         snapshot_archive_path_file.display(),
         snapshot_dir,

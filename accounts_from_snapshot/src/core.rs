@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::ffi::OsStr;
 use std::str::FromStr;
 
