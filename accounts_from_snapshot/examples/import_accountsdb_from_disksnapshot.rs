@@ -173,7 +173,7 @@ pub async fn main() {
                         warn!("-> error loading account {:?}: {:?}", pk, err);
                     }
                     Ok(None) => {
-                        warn!("-> eccount {:?} not found", pk);
+                        warn!("-> account {:?} not found", pk);
                     }
                 }
             }
@@ -216,7 +216,7 @@ fn start_accountsdb_read_task(db: Arc<AccountsDb>) {
                     warn!("-> error loading account {:?}: {:?}", pk, err);
                 }
                 Ok(None) => {
-                    warn!("-> eccount {:?} not found", pk);
+                    warn!("-> account {:?} not found", pk);
                 }
             }
 
