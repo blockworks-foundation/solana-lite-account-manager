@@ -1,4 +1,4 @@
-use lite_account_manager_common::account_data::{Account, AccountData};
+use lite_account_manager_common::account_data::{Account, AccountData, Data};
 use lite_token_account_storage::account_types::TokenProgramAccountState;
 use rand::{rngs::ThreadRng, Rng};
 use solana_sdk::{clock::Slot, program_option::COption, program_pack::Pack, pubkey::Pubkey};
@@ -117,9 +117,7 @@ pub fn create_token_account_data(
         pubkey,
         account: Arc::new(Account {
             lamports: 2039280,
-            data: lite_account_manager_common::account_data::Data::Uncompressed(
-                create_token_account(token_creation_params),
-            ),
+            data: Data::Uncompressed(create_token_account(token_creation_params)),
             owner: spl_token::id(),
             executable: false,
             rent_epoch: u64::MAX,
@@ -142,10 +140,8 @@ pub fn parse_account_data_to_token_params(account_data: AccountData) -> TokenAcc
     let token_account =
         spl_token::state::Account::unpack(&account_data.account.data.data()).unwrap();
     let delegate = match token_account.delegate {
-        solana_sdk::program_option::COption::Some(delegate) => {
-            Some((delegate, token_account.delegated_amount))
-        }
-        solana_sdk::program_option::COption::None => Option::None::<_>,
+        COption::Some(delegate) => Some((delegate, token_account.delegated_amount)),
+        COption::None => None,
     };
     TokenAccountParams {
         owner: token_account.owner,
@@ -181,9 +177,7 @@ pub fn create_mint_account_data(
         pubkey,
         account: Arc::new(Account {
             lamports: 1000,
-            data: lite_account_manager_common::account_data::Data::Uncompressed(create_mint(
-                mint_creation_params,
-            )),
+            data: Data::Uncompressed(create_mint(mint_creation_params)),
             owner: spl_token::id(),
             executable: false,
             rent_epoch: u64::MAX,

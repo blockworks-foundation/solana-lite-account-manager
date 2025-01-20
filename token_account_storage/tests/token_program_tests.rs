@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use lite_account_manager_common::{
-    account_data::{Account, AccountData},
+    account_data::{Account, AccountData, Data},
     account_store_interface::AccountStorageInterface,
     commitment::Commitment,
     slot_info::SlotInfo,
@@ -11,6 +11,10 @@ use lite_token_account_storage::{
     inmemory_token_storage::TokenProgramAccountsStorage,
 };
 use solana_sdk::pubkey::Pubkey;
+use utils::{
+    create_mint_account_data, create_token_account_data, parse_account_data_to_mint_params,
+    parse_account_data_to_token_params, MintCreationParams, TokenAccountParams,
+};
 
 mod utils;
 
@@ -21,49 +25,40 @@ pub fn test_saving_and_loading_token_account() {
     let token_store = TokenProgramAccountsStorage::new(inmemory_token_storage);
 
     let mint: Pubkey = Pubkey::new_unique();
-    let mint_creation_params = utils::MintCreationParams::create_default(100);
-    let mint_account = utils::create_mint_account_data(mint, mint_creation_params, 1, 1);
+    let mint_creation_params = MintCreationParams::create_default(100);
+    let mint_account = create_mint_account_data(mint, mint_creation_params, 1, 1);
 
     let owner = Pubkey::new_unique();
     let token_account_pk = Pubkey::new_unique();
-    let token_account_params = utils::TokenAccountParams::create_default(owner, mint, 50);
+    let token_account_params = TokenAccountParams::create_default(owner, mint, 50);
     let token_account_data =
-        utils::create_token_account_data(token_account_pk, token_account_params, 2, 2);
+        create_token_account_data(token_account_pk, token_account_params, 2, 2);
 
     token_store.initialize_or_update_account(mint_account);
     token_store.initialize_or_update_account(token_account_data);
 
     assert_eq!(
-        utils::parse_account_data_to_token_params(
+        parse_account_data_to_token_params(
             token_store
-                .get_account(
-                    token_account_pk,
-                    lite_account_manager_common::commitment::Commitment::Confirmed
-                )
+                .get_account(token_account_pk, Commitment::Confirmed)
                 .unwrap()
                 .unwrap()
         ),
         token_account_params
     );
     assert_eq!(
-        utils::parse_account_data_to_token_params(
+        parse_account_data_to_token_params(
             token_store
-                .get_account(
-                    token_account_pk,
-                    lite_account_manager_common::commitment::Commitment::Processed
-                )
+                .get_account(token_account_pk, Commitment::Processed)
                 .unwrap()
                 .unwrap()
         ),
         token_account_params
     );
     assert_eq!(
-        utils::parse_account_data_to_token_params(
+        parse_account_data_to_token_params(
             token_store
-                .get_account(
-                    token_account_pk,
-                    lite_account_manager_common::commitment::Commitment::Finalized
-                )
+                .get_account(token_account_pk, Commitment::Finalized)
                 .unwrap()
                 .unwrap()
         ),
@@ -71,36 +66,27 @@ pub fn test_saving_and_loading_token_account() {
     );
 
     assert_eq!(
-        utils::parse_account_data_to_mint_params(
+        parse_account_data_to_mint_params(
             token_store
-                .get_account(
-                    mint,
-                    lite_account_manager_common::commitment::Commitment::Confirmed
-                )
+                .get_account(mint, Commitment::Confirmed)
                 .unwrap()
                 .unwrap()
         ),
         mint_creation_params
     );
     assert_eq!(
-        utils::parse_account_data_to_mint_params(
+        parse_account_data_to_mint_params(
             token_store
-                .get_account(
-                    mint,
-                    lite_account_manager_common::commitment::Commitment::Processed
-                )
+                .get_account(mint, Commitment::Processed)
                 .unwrap()
                 .unwrap()
         ),
         mint_creation_params
     );
     assert_eq!(
-        utils::parse_account_data_to_mint_params(
+        parse_account_data_to_mint_params(
             token_store
-                .get_account(
-                    mint,
-                    lite_account_manager_common::commitment::Commitment::Finalized
-                )
+                .get_account(mint, Commitment::Finalized)
                 .unwrap()
                 .unwrap()
         ),
@@ -108,23 +94,14 @@ pub fn test_saving_and_loading_token_account() {
     );
 
     let mut rng = rand::thread_rng();
-    let token_account_params_2 =
-        utils::TokenAccountParams::create_random(&mut rng, owner, mint, 50);
-    let token_account_params_3 =
-        utils::TokenAccountParams::create_random(&mut rng, owner, mint, 100);
+    let token_account_params_2 = TokenAccountParams::create_random(&mut rng, owner, mint, 50);
+    let token_account_params_3 = TokenAccountParams::create_random(&mut rng, owner, mint, 100);
     let token_account_data_2 =
-        utils::create_token_account_data(token_account_pk, token_account_params_2, 3, 3);
-    let account_data_3 =
-        utils::create_token_account_data(token_account_pk, token_account_params_3, 4, 4);
-    token_store.update_account(
-        token_account_data_2.clone(),
-        lite_account_manager_common::commitment::Commitment::Processed,
-    );
+        create_token_account_data(token_account_pk, token_account_params_2, 3, 3);
+    let account_data_3 = create_token_account_data(token_account_pk, token_account_params_3, 4, 4);
+    token_store.update_account(token_account_data_2.clone(), Commitment::Processed);
 
-    token_store.update_account(
-        account_data_3.clone(),
-        lite_account_manager_common::commitment::Commitment::Processed,
-    );
+    token_store.update_account(account_data_3.clone(), Commitment::Processed);
 
     token_store.process_slot_data(
         SlotInfo {
@@ -154,36 +131,27 @@ pub fn test_saving_and_loading_token_account() {
     );
 
     assert_eq!(
-        utils::parse_account_data_to_token_params(
+        parse_account_data_to_token_params(
             token_store
-                .get_account(
-                    token_account_pk,
-                    lite_account_manager_common::commitment::Commitment::Processed
-                )
+                .get_account(token_account_pk, Commitment::Processed)
                 .unwrap()
                 .unwrap()
         ),
         token_account_params_3
     );
     assert_eq!(
-        utils::parse_account_data_to_token_params(
+        parse_account_data_to_token_params(
             token_store
-                .get_account(
-                    token_account_pk,
-                    lite_account_manager_common::commitment::Commitment::Confirmed
-                )
+                .get_account(token_account_pk, Commitment::Confirmed)
                 .unwrap()
                 .unwrap()
         ),
         token_account_params_2
     );
     assert_eq!(
-        utils::parse_account_data_to_token_params(
+        parse_account_data_to_token_params(
             token_store
-                .get_account(
-                    token_account_pk,
-                    lite_account_manager_common::commitment::Commitment::Finalized
-                )
+                .get_account(token_account_pk, Commitment::Finalized)
                 .unwrap()
                 .unwrap()
         ),
@@ -191,36 +159,27 @@ pub fn test_saving_and_loading_token_account() {
     );
 
     assert_eq!(
-        utils::parse_account_data_to_mint_params(
+        parse_account_data_to_mint_params(
             token_store
-                .get_account(
-                    mint,
-                    lite_account_manager_common::commitment::Commitment::Confirmed
-                )
+                .get_account(mint, Commitment::Confirmed)
                 .unwrap()
                 .unwrap()
         ),
         mint_creation_params
     );
     assert_eq!(
-        utils::parse_account_data_to_mint_params(
+        parse_account_data_to_mint_params(
             token_store
-                .get_account(
-                    mint,
-                    lite_account_manager_common::commitment::Commitment::Processed
-                )
+                .get_account(mint, Commitment::Processed)
                 .unwrap()
                 .unwrap()
         ),
         mint_creation_params
     );
     assert_eq!(
-        utils::parse_account_data_to_mint_params(
+        parse_account_data_to_mint_params(
             token_store
-                .get_account(
-                    mint,
-                    lite_account_manager_common::commitment::Commitment::Finalized
-                )
+                .get_account(mint, Commitment::Finalized)
                 .unwrap()
                 .unwrap()
         ),
@@ -245,45 +204,33 @@ pub fn test_saving_and_loading_token_account() {
         Commitment::Finalized,
     );
 
-    let mint_2 = utils::MintCreationParams::create_random(&mut rng, 2000);
+    let mint_2 = MintCreationParams::create_random(&mut rng, 2000);
 
-    let mint_account_2 = utils::create_mint_account_data(mint, mint_2, 5, 5);
-    token_store.update_account(
-        mint_account_2.clone(),
-        lite_account_manager_common::commitment::Commitment::Processed,
-    );
+    let mint_account_2 = create_mint_account_data(mint, mint_2, 5, 5);
+    token_store.update_account(mint_account_2.clone(), Commitment::Processed);
 
     assert_eq!(
-        utils::parse_account_data_to_token_params(
+        parse_account_data_to_token_params(
             token_store
-                .get_account(
-                    token_account_pk,
-                    lite_account_manager_common::commitment::Commitment::Processed
-                )
+                .get_account(token_account_pk, Commitment::Processed)
                 .unwrap()
                 .unwrap()
         ),
         token_account_params_3
     );
     assert_eq!(
-        utils::parse_account_data_to_token_params(
+        parse_account_data_to_token_params(
             token_store
-                .get_account(
-                    token_account_pk,
-                    lite_account_manager_common::commitment::Commitment::Confirmed
-                )
+                .get_account(token_account_pk, Commitment::Confirmed)
                 .unwrap()
                 .unwrap()
         ),
         token_account_params_3
     );
     assert_eq!(
-        utils::parse_account_data_to_token_params(
+        parse_account_data_to_token_params(
             token_store
-                .get_account(
-                    token_account_pk,
-                    lite_account_manager_common::commitment::Commitment::Finalized
-                )
+                .get_account(token_account_pk, Commitment::Finalized)
                 .unwrap()
                 .unwrap()
         ),
@@ -291,36 +238,27 @@ pub fn test_saving_and_loading_token_account() {
     );
 
     assert_eq!(
-        utils::parse_account_data_to_mint_params(
+        parse_account_data_to_mint_params(
             token_store
-                .get_account(
-                    mint,
-                    lite_account_manager_common::commitment::Commitment::Confirmed
-                )
+                .get_account(mint, Commitment::Confirmed)
                 .unwrap()
                 .unwrap()
         ),
         mint_creation_params
     );
     assert_eq!(
-        utils::parse_account_data_to_mint_params(
+        parse_account_data_to_mint_params(
             token_store
-                .get_account(
-                    mint,
-                    lite_account_manager_common::commitment::Commitment::Processed
-                )
+                .get_account(mint, Commitment::Processed)
                 .unwrap()
                 .unwrap()
         ),
         mint_2
     );
     assert_eq!(
-        utils::parse_account_data_to_mint_params(
+        parse_account_data_to_mint_params(
             token_store
-                .get_account(
-                    mint,
-                    lite_account_manager_common::commitment::Commitment::Finalized
-                )
+                .get_account(mint, Commitment::Finalized)
                 .unwrap()
                 .unwrap()
         ),
@@ -332,7 +270,7 @@ pub fn test_saving_and_loading_token_account() {
         pubkey: token_account_pk,
         account: Arc::new(Account {
             lamports: 0,
-            data: lite_account_manager_common::account_data::Data::Uncompressed(vec![]),
+            data: Data::Uncompressed(vec![]),
             owner: Pubkey::default(),
             executable: false,
             rent_epoch: u64::MAX,
@@ -345,32 +283,23 @@ pub fn test_saving_and_loading_token_account() {
 
     assert_eq!(
         token_store
-            .get_account(
-                token_account_pk,
-                lite_account_manager_common::commitment::Commitment::Processed
-            )
+            .get_account(token_account_pk, Commitment::Processed)
             .unwrap(),
         None
     );
     assert_eq!(
-        utils::parse_account_data_to_token_params(
+        parse_account_data_to_token_params(
             token_store
-                .get_account(
-                    token_account_pk,
-                    lite_account_manager_common::commitment::Commitment::Confirmed
-                )
+                .get_account(token_account_pk, Commitment::Confirmed)
                 .unwrap()
                 .unwrap()
         ),
         token_account_params_3
     );
     assert_eq!(
-        utils::parse_account_data_to_token_params(
+        parse_account_data_to_token_params(
             token_store
-                .get_account(
-                    token_account_pk,
-                    lite_account_manager_common::commitment::Commitment::Finalized
-                )
+                .get_account(token_account_pk, Commitment::Finalized)
                 .unwrap()
                 .unwrap()
         ),
@@ -397,30 +326,21 @@ pub fn test_saving_and_loading_token_account() {
 
     assert_eq!(
         token_store
-            .get_account(
-                token_account_pk,
-                lite_account_manager_common::commitment::Commitment::Processed
-            )
+            .get_account(token_account_pk, Commitment::Processed)
             .unwrap(),
         None
     );
     assert_eq!(
         token_store
-            .get_account(
-                token_account_pk,
-                lite_account_manager_common::commitment::Commitment::Confirmed
-            )
+            .get_account(token_account_pk, Commitment::Confirmed)
             .unwrap(),
         None
     );
 
     assert_eq!(
-        utils::parse_account_data_to_token_params(
+        parse_account_data_to_token_params(
             token_store
-                .get_account(
-                    token_account_pk,
-                    lite_account_manager_common::commitment::Commitment::Finalized
-                )
+                .get_account(token_account_pk, Commitment::Finalized)
                 .unwrap()
                 .unwrap()
         ),
@@ -438,29 +358,20 @@ pub fn test_saving_and_loading_token_account() {
 
     assert_eq!(
         token_store
-            .get_account(
-                token_account_pk,
-                lite_account_manager_common::commitment::Commitment::Processed
-            )
+            .get_account(token_account_pk, Commitment::Processed)
             .unwrap(),
         None
     );
     assert_eq!(
         token_store
-            .get_account(
-                token_account_pk,
-                lite_account_manager_common::commitment::Commitment::Confirmed
-            )
+            .get_account(token_account_pk, Commitment::Confirmed)
             .unwrap(),
         None
     );
 
     assert_eq!(
         token_store
-            .get_account(
-                token_account_pk,
-                lite_account_manager_common::commitment::Commitment::Finalized
-            )
+            .get_account(token_account_pk, Commitment::Finalized)
             .unwrap(),
         None
     );
