@@ -4,12 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+lite-account-manager-common = {workspace = true}
+lite-accounts-from-snapshot = { workspace = true}
+
 solana-sdk = {workspace = true}
 solana-program = {workspace = true}
 spl-token = {workspace = true}
 spl-token-2022 = {workspace = true}
 
-lite-account-manager-common = {workspace = true}
 dashmap = {workspace = true}
 itertools = { workspace = true }
 futures = { workspace = true }
