@@ -164,6 +164,7 @@ impl AccountsDb {
         }
     }
 
+    #[cfg(test)]
     pub fn new_for_testing() -> Self {
         let db = SolanaAccountsDb::new_single_for_tests();
         let accounts = Accounts::new(Arc::new(db));
@@ -276,7 +277,7 @@ impl AccountStorageInterface for AccountsDb {
         Ok(result)
     }
 
-    fn process_slot_data(&self, info: SlotInfo, commitment: Commitment) -> Vec<()> {
+    fn process_slot_data(&self, info: SlotInfo, commitment: Commitment) {
         let slot = info.slot;
         if commitment == Commitment::Finalized {
             self.accounts.add_root(slot);
@@ -314,16 +315,6 @@ impl AccountStorageInterface for AccountsDb {
         assert!(confirmed >= finalized);
 
         self.slot_state.set(processed, confirmed, finalized);
-
-        self.accounts
-            .load_all(&Ancestors::from(vec![slot]), slot, false)
-            .unwrap()
-            .into_iter()
-            .filter(|(_, _, updated_slot)| *updated_slot == slot)
-            .map(|(key, data, slot)| Self::convert_to_account_data(key, slot, data))
-            .collect_vec();
-
-        todo!()
     }
 
     fn create_snapshot(&self, _program_id: Pubkey) -> Result<Vec<u8>, AccountLoadingError> {
@@ -793,6 +784,10 @@ mod tests {
     mod process_slot_data {
         use std::str::FromStr;
 
+        use itertools::Itertools;
+        use lite_account_manager_common::account_data::AccountData;
+        use solana_accounts_db::ancestors::Ancestors;
+        use solana_sdk::clock::Slot;
         use solana_sdk::pubkey::Pubkey;
 
         use crate::accountsdb::accounts_db::tests::{create_account_data, slot_info};
@@ -871,16 +866,21 @@ mod tests {
 
             let pk = Pubkey::from_str("HZGMUF6kdCUK6nuc3TdNR6X5HNdGtg5HmVQ8cV2pRiHE").unwrap();
             let ak = Pubkey::from_str("6rRiMihF7UdJz25t5QvS7PgP9yzfubN7TBRv26ZBVAhE").unwrap();
+            let slot_info = slot_info(3);
 
-            let result = ti.process_slot_data(slot_info(3), Processed);
+            ti.process_slot_data(slot_info, Processed);
+            let result = commitment_after_process_slot_data(&ti, slot_info.slot);
+
             assert_eq!(result.len(), 0);
 
             ti.initialize_or_update_account(create_account_data(3, ak, pk, 10));
 
-            let result = ti.process_slot_data(slot_info(3), Confirmed);
+            ti.process_slot_data(slot_info, Confirmed);
+            let result = commitment_after_process_slot_data(&ti, slot_info.slot);
             assert_eq!(result.len(), 0);
 
-            let result = ti.process_slot_data(slot_info(3), Finalized);
+            ti.process_slot_data(slot_info, Finalized);
+            let result = commitment_after_process_slot_data(&ti, slot_info.slot);
             assert_eq!(result.len(), 1)
         }
 
@@ -894,8 +894,20 @@ mod tests {
             ti.initialize_or_update_account(create_account_data(3, ak, pk, 10));
             ti.process_slot_data(slot_info(3), Finalized);
 
-            let result = ti.process_slot_data(slot_info(4), Finalized);
+            let slot_info = slot_info(4);
+            ti.process_slot_data(slot_info, Finalized);
+            let result = commitment_after_process_slot_data(&ti, slot_info.slot);
             assert_eq!(result.len(), 0)
+        }
+
+        fn commitment_after_process_slot_data(db: &AccountsDb, slot: Slot) -> Vec<AccountData> {
+            db.accounts
+                .load_all(&Ancestors::from(vec![slot]), slot, false)
+                .unwrap()
+                .into_iter()
+                .filter(|(_, _, updated_slot)| *updated_slot == slot)
+                .map(|(key, data, slot)| AccountsDb::convert_to_account_data(key, slot, data))
+                .collect_vec()
         }
     }
 

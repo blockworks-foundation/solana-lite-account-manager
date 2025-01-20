@@ -126,41 +126,32 @@ pub fn test_saving_and_loading_token_account() {
         lite_account_manager_common::commitment::Commitment::Processed,
     );
 
-    assert_eq!(
-        token_store.process_slot_data(
-            SlotInfo {
-                slot: 3,
-                parent: 2,
-                root: 0,
-            },
-            Commitment::Processed
-        ),
-        vec![]
+    token_store.process_slot_data(
+        SlotInfo {
+            slot: 3,
+            parent: 2,
+            root: 0,
+        },
+        Commitment::Processed,
     );
 
-    assert_eq!(
-        token_store.process_slot_data(
-            SlotInfo {
-                slot: 4,
-                parent: 3,
-                root: 0,
-            },
-            Commitment::Processed
-        ),
-        vec![]
+    token_store.process_slot_data(
+        SlotInfo {
+            slot: 4,
+            parent: 3,
+            root: 0,
+        },
+        Commitment::Processed,
     );
 
-    // assert_eq!(
-    //     token_store.process_slot_data(
-    //         SlotInfo {
-    //             slot: 3,
-    //             parent: 2,
-    //             root: 0,
-    //         },
-    //         Commitment::Confirmed
-    //     ),
-    //     vec![token_account_data_2.clone()]
-    // );
+    token_store.process_slot_data(
+        SlotInfo {
+            slot: 3,
+            parent: 2,
+            root: 0,
+        },
+        Commitment::Confirmed,
+    );
 
     assert_eq!(
         utils::parse_account_data_to_token_params(
@@ -236,29 +227,23 @@ pub fn test_saving_and_loading_token_account() {
         mint_creation_params
     );
 
-    // assert_eq!(
-    //     token_store.process_slot_data(
-    //         SlotInfo {
-    //             slot: 4,
-    //             parent: 3,
-    //             root: 0,
-    //         },
-    //         Commitment::Confirmed
-    //     ),
-    //     vec![account_data_3.clone()]
-    // );
+    token_store.process_slot_data(
+        SlotInfo {
+            slot: 4,
+            parent: 3,
+            root: 0,
+        },
+        Commitment::Confirmed,
+    );
 
-    // assert_eq!(
-    //     token_store.process_slot_data(
-    //         SlotInfo {
-    //             slot: 3,
-    //             parent: 2,
-    //             root: 0,
-    //         },
-    //         Commitment::Finalized
-    //     ),
-    //     vec![token_account_data_2.clone()]
-    // );
+    token_store.process_slot_data(
+        SlotInfo {
+            slot: 3,
+            parent: 2,
+            root: 0,
+        },
+        Commitment::Finalized,
+    );
 
     let mint_2 = utils::MintCreationParams::create_random(&mut rng, 2000);
 
@@ -392,19 +377,16 @@ pub fn test_saving_and_loading_token_account() {
         token_account_params_2
     );
 
-    assert_eq!(
-        token_store.process_slot_data(
-            SlotInfo {
-                slot: 6,
-                parent: 5,
-                root: 0,
-            },
-            Commitment::Confirmed
-        ),
-        vec![]
+    token_store.process_slot_data(
+        SlotInfo {
+            slot: 6,
+            parent: 5,
+            root: 0,
+        },
+        Commitment::Confirmed,
     );
 
-    let accounts_updated = token_store.process_slot_data(
+    token_store.process_slot_data(
         SlotInfo {
             slot: 5,
             parent: 4,
@@ -412,11 +394,6 @@ pub fn test_saving_and_loading_token_account() {
         },
         Commitment::Finalized,
     );
-
-    // assert!(
-    //     accounts_updated == vec![mint_account_2.clone(), account_data_3.clone()]
-    //         || accounts_updated == vec![account_data_3.clone(), mint_account_2.clone()]
-    // );
 
     assert_eq!(
         token_store
@@ -450,16 +427,13 @@ pub fn test_saving_and_loading_token_account() {
         token_account_params_3
     );
 
-    assert_eq!(
-        token_store.process_slot_data(
-            SlotInfo {
-                slot: 6,
-                parent: 5,
-                root: 0,
-            },
-            Commitment::Finalized
-        ),
-        vec![]
+    token_store.process_slot_data(
+        SlotInfo {
+            slot: 6,
+            parent: 5,
+            root: 0,
+        },
+        Commitment::Finalized,
     );
 
     assert_eq!(

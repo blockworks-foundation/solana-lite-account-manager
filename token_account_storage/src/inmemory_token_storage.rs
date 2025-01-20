@@ -44,6 +44,7 @@ lazy_static::lazy_static! {
 
 const PARTIAL_PUBKEY_SIZE: usize = 4;
 type InmemoryPubkey = PartialPubkey<PARTIAL_PUBKEY_SIZE>;
+
 #[derive(Clone)]
 struct ProcessedAccount {
     pub processed_account: TokenProgramAccountType,
@@ -146,34 +147,6 @@ impl ProcessedAccountStore {
                         slot_parent: None,
                     },
                 );
-            }
-        }
-    }
-
-    pub fn get_processed_for_slot(
-        &self,
-        slot_info: SlotInfo,
-        mints_by_index: &Arc<DashMap<MintIndex, MintAccount>>,
-    ) -> Vec<AccountData> {
-        let lk = self.processed_slot_accounts.read().unwrap();
-        match lk.get(&slot_info.slot) {
-            Some(acc) => acc
-                .processed_accounts
-                .iter()
-                .filter_map(|(_, account)| {
-                    token_program_account_to_account_data(
-                        &account.processed_account,
-                        slot_info.slot,
-                        account.write_version,
-                        mints_by_index,
-                    )
-                })
-                .collect(),
-            None => {
-                log::error!("confirmed slot not found in cache : {}", slot_info.slot);
-                drop(lk);
-                self.update_slot_info(slot_info);
-                vec![]
             }
         }
     }
@@ -862,12 +835,11 @@ impl AccountStorageInterface for TokenProgramAccountsStorage {
             })
     }
 
-    fn process_slot_data(&self, slot_info: SlotInfo, commitment: Commitment) -> Vec<()> {
+    fn process_slot_data(&self, slot_info: SlotInfo, commitment: Commitment) {
         match commitment {
             Commitment::Processed => {
                 log::debug!("process slot data  : {slot_info:?}");
                 self.processed_storage.update_slot_info(slot_info);
-                vec![]
             }
             Commitment::Confirmed => {
                 log::debug!("confirm slot data  : {slot_info:?}");
@@ -875,9 +847,6 @@ impl AccountStorageInterface for TokenProgramAccountsStorage {
                     self.confirmed_slot.store(slot_info.slot, Ordering::Relaxed);
                     self.processed_storage.update_slot_info(slot_info);
                 }
-                self.processed_storage
-                    .get_processed_for_slot(slot_info, &self.mints_by_index);
-                todo!()
             }
             Commitment::Finalized => {
                 log::debug!("finalize slot data  : {slot_info:?}");
@@ -887,23 +856,9 @@ impl AccountStorageInterface for TokenProgramAccountsStorage {
                 }
 
                 // move data from processed storage to main storage
-                let finalized_accounts = self.processed_storage.finalize(slot_info.slot);
-
-                let accounts_notifications = finalized_accounts
-                    .iter()
-                    .filter_map(|(acc, slot)| {
-                        token_program_account_to_account_data(
-                            &acc.processed_account,
-                            *slot,
-                            acc.write_version,
-                            &self.mints_by_index,
-                        )
-                    })
-                    .collect_vec();
-                for (finalized_account, _) in finalized_accounts {
+                for (finalized_account, _) in self.processed_storage.finalize(slot_info.slot) {
                     self.add_account_finalized(finalized_account.processed_account);
                 }
-                vec![]
             }
         }
     }

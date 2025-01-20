@@ -193,9 +193,9 @@ impl AccountStorageInterface for AccountsOnDemand {
         }
     }
 
-    fn process_slot_data(&self, slot_info: SlotInfo, commitment: Commitment) -> Vec<()> {
+    fn process_slot_data(&self, slot_info: SlotInfo, commitment: Commitment) {
         self.accounts_storage
-            .process_slot_data(slot_info, commitment)
+            .process_slot_data(slot_info, commitment);
     }
 
     fn create_snapshot(&self, program_id: Pubkey) -> Result<Vec<u8>, AccountLoadingError> {
