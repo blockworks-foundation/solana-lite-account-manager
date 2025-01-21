@@ -8,6 +8,7 @@ members = [
     "common",
     "token_account_storage",
     "simulate_from_snapshot",
+    "load_tester",
 ]
 
 [workspace.package]
