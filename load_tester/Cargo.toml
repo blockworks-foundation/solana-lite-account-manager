@@ -1,0 +1,31 @@
+[package]
+name = "load-tester"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "load-tester"
+path = "src/main.rs"
+
+[dependencies]
+# solana-rpc-client-api = { workspace = true }
+# solana-rpc-client = { workspace = true }
+
+anyhow = { workspace = true }
+async-trait = "^0.1"
+clap = { version = "^4.5.4", features = ["derive"] }
+env_logger = "^0.11.6"
+log = { workspace = true }
+rand = "^0.8.5"
+reqwest = { version = "^0.12.9", features = [
+    "blocking",
+    "brotli",
+    "deflate",
+    "gzip",
+    "rustls-tls",
+    "json",
+] }
+rlt = "^0.2.1"
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
