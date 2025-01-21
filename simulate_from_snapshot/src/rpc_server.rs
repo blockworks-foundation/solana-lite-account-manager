@@ -74,7 +74,7 @@ impl RpcServerImpl {
 
         let http_server_handle = ServerBuilder::default()
             .set_middleware(middleware)
-            .max_connections(10)
+            .max_connections(10_000)
             .max_request_body_size(1024 * 1024) // 16 MB
             .max_response_body_size(512 * 1024 * 1024) // 512 MBs
             .http_only()
