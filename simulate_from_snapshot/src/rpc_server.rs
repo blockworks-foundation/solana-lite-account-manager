@@ -280,8 +280,8 @@ fn convert_token_program_account_data_to_additional_data(
     token_program_account_data: &TokenProgramAccountData,
     token_account_mints: &HashMap<Pubkey, Mint>,
 ) -> Option<AccountAdditionalDataV2> {
-    if let TokenProgramAccountData::TokenAccount(token_account) = token_program_account_data {
-        convert_mint_to_additional_data(token_account_mints.get(&token_account.mint_pubkey))
+    if let TokenProgramAccountData::TokenAccount { mint_pubkey, .. } = token_program_account_data {
+        convert_mint_to_additional_data(token_account_mints.get(mint_pubkey))
     } else {
         None
     }

@@ -13,7 +13,7 @@ use lite_account_manager_common::{
     account_filter::AccountFilterType,
     account_store_interface::{
         AccountLoadingError, AccountStorageInterface, Mint, TokenProgramAccountData,
-        TokenProgramAccountStorageInterface, TokenProgramTokenAccountData, TokenProgramType,
+        TokenProgramAccountStorageInterface, TokenProgramType,
     },
     commitment::Commitment,
     pubkey_container_utils::PartialPubkey,
@@ -439,12 +439,10 @@ impl TokenProgramAccountsStorage {
                                 .get(&token_account.mint)
                                 .unwrap_or_else(|| panic!("Mint must exist when a token account for a mint exists: token_account_pk={:?}", account_data.pubkey));
                             (
-                                TokenProgramAccountData::TokenAccount(
-                                    TokenProgramTokenAccountData {
-                                        account_data,
-                                        mint_pubkey: mint.pubkey,
-                                    },
-                                ),
+                                TokenProgramAccountData::TokenAccount {
+                                    account_data,
+                                    mint_pubkey: mint.pubkey,
+                                },
                                 Some(mint.clone()),
                             )
                         })
@@ -484,12 +482,10 @@ impl TokenProgramAccountsStorage {
                                 .get(&token_account.mint)
                                 .unwrap_or_else(|| panic!("Mint must exist when a token account for a mint exists: token_account_pk={:?}", token_account.pubkey));
                             (
-                                TokenProgramAccountData::TokenAccount(
-                                    TokenProgramTokenAccountData {
-                                        account_data,
-                                        mint_pubkey: mint.pubkey,
-                                    },
-                                ),
+                                TokenProgramAccountData::TokenAccount {
+                                    account_data,
+                                    mint_pubkey: mint.pubkey,
+                                },
                                 Some(mint.clone()),
                             )
                         } else {
@@ -569,12 +565,10 @@ impl TokenProgramAccountsStorage {
                                         .unwrap_or_else(|| panic!("Mint must exist when a token account for a mint exists: token_account_pk={:?}", token_account.pubkey));
                                     let mint_account = mint_account_ref.value();
                                     matching_token_accounts.push(
-                                        TokenProgramAccountData::TokenAccount(
-                                            TokenProgramTokenAccountData {
-                                                account_data,
-                                                mint_pubkey: mint_account.pubkey,
-                                            },
-                                        ),
+                                        TokenProgramAccountData::TokenAccount {
+                                            account_data,
+                                            mint_pubkey: mint_account.pubkey,
+                                        },
                                     );
                                     mints_for_matching_token_accounts
                                         .entry(mint_account.pubkey)
@@ -614,13 +608,9 @@ impl TokenProgramAccountsStorage {
                                         &self.mints_by_index,
                                     )
                                 })
-                                .map(|account_data| {
-                                    TokenProgramAccountData::TokenAccount(
-                                        TokenProgramTokenAccountData {
-                                            account_data,
-                                            mint_pubkey: matching_mint_account.pubkey,
-                                        },
-                                    )
+                                .map(|account_data| TokenProgramAccountData::TokenAccount {
+                                    account_data,
+                                    mint_pubkey: matching_mint_account.pubkey,
                                 })
                                 .collect_vec();
 

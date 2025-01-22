@@ -92,20 +92,17 @@ impl TryFrom<&Pubkey> for TokenProgramType {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenProgramAccountData {
-    TokenAccount(TokenProgramTokenAccountData),
+    TokenAccount {
+        account_data: AccountData,
+        mint_pubkey: Pubkey,
+    },
     OtherAccount(AccountData),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct TokenProgramTokenAccountData {
-    pub account_data: AccountData,
-    pub mint_pubkey: Pubkey,
 }
 
 impl TokenProgramAccountData {
     pub fn into_inner(self) -> AccountData {
         match self {
-            TokenProgramAccountData::TokenAccount(token_account) => token_account.account_data,
+            TokenProgramAccountData::TokenAccount { account_data, .. } => account_data,
             TokenProgramAccountData::OtherAccount(account_data) => account_data,
         }
     }
@@ -116,7 +113,7 @@ impl Deref for TokenProgramAccountData {
 
     fn deref(&self) -> &Self::Target {
         match self {
-            TokenProgramAccountData::TokenAccount(token_account) => &token_account.account_data,
+            TokenProgramAccountData::TokenAccount { account_data, .. } => account_data,
             TokenProgramAccountData::OtherAccount(account_data) => account_data,
         }
     }
@@ -125,7 +122,7 @@ impl Deref for TokenProgramAccountData {
 impl DerefMut for TokenProgramAccountData {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
-            TokenProgramAccountData::TokenAccount(token_account) => &mut token_account.account_data,
+            TokenProgramAccountData::TokenAccount { account_data, .. } => account_data,
             TokenProgramAccountData::OtherAccount(account_data) => account_data,
         }
     }
