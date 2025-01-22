@@ -75,12 +75,12 @@ async fn main() {
     process_slot_updates(db.clone(), slots_rx);
     start_backfill(slot.info.slot, db.clone());
 
-    let rpc_server = RpcServerImpl::new(db.clone(), None);
+    info!("Storage initialized with snapshot");
 
-    info!("Storage Initialized with snapshot");
-    RpcServerImpl::start_serving(rpc_server, 10700)
-        .await
-        .unwrap();
+    let rpc_server = RpcServerImpl::new(db.clone(), None);
+    let rpc_server_handle = rpc_server.start_serving("[::]:10700").await.unwrap();
+    rpc_server_handle.stopped().await;
+    log::error!("RPC HTTP server stopped");
 }
 
 fn process_slot_updates(
