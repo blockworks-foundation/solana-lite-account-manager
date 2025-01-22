@@ -6,7 +6,7 @@ use std::time::Duration;
 use anyhow::Context;
 use base64::Engine;
 use itertools::Itertools;
-use jsonrpsee::server::ServerBuilder;
+use jsonrpsee::server::{ServerBuilder, ServerHandle};
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use lite_account_manager_common::account_filter::AccountFilterType as AmAccountFilterType;
 use lite_account_manager_common::account_store_interface::{
@@ -60,8 +60,7 @@ impl RpcServerImpl {
         }
     }
 
-    pub async fn start_serving(rpc_impl: RpcServerImpl, port: u16) -> anyhow::Result<()> {
-        let http_addr = format!("[::]:{port}");
+    pub async fn start_serving(self, bind_address: &str) -> anyhow::Result<ServerHandle> {
         let cors = CorsLayer::new()
             .max_age(Duration::from_secs(86400))
             // Allow `POST` when accessing the resource
@@ -78,16 +77,13 @@ impl RpcServerImpl {
             .max_request_body_size(1024 * 1024) // 16 MB
             .max_response_body_size(512 * 1024 * 1024) // 512 MBs
             .http_only()
-            .build(http_addr.clone())
+            .build(bind_address)
             .await
             .context("failed binding RPC server, bind address may be occupied")?
-            .start(rpc_impl.into_rpc());
+            .start(self.into_rpc());
 
-        log::info!("RPC server started at {http_addr:?}");
-        http_server_handle.stopped().await;
-        log::error!("RPC HTTP SERVER STOPPED");
-
-        Ok(())
+        log::info!("RPC server started at {bind_address:?}");
+        Ok(http_server_handle)
     }
 }
 

@@ -1,9 +1,10 @@
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::time::Duration;
 use std::{env, path::PathBuf, str::FromStr, sync::Arc};
 
 use clap::Parser;
-use cli::Args;
+use cli::{Args, GeyserSources};
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task_with_mpsc;
 use geyser_grpc_connector::{GrpcConnectionTimeouts, GrpcSourceConfig};
 use lite_account_manager_common::{
@@ -44,8 +45,12 @@ async fn main() {
 
     let Args {
         snapshot_archive_path,
-        quic_url,
-        grpc_addr,
+        geyser_sources: GeyserSources {
+            quic_url,
+            grpc_addr,
+        },
+        rpc_bind_addr,
+        prometheus_bind_addr,
     } = args;
 
     let grpc_x_token = env::var("GRPC_X_TOKEN").ok();
@@ -110,25 +115,45 @@ async fn main() {
         num_token_accounts + num_mint_accounts
     );
 
-    if let Some(quic_url) = quic_url {
-        info!("Using quic source on {}", quic_url);
-        stream_accounts_from_quic_geyser_plugin(quic_url, token_storage.clone());
-    }
-
-    if let Some(grpc_addr) = grpc_addr {
-        info!(
-            "Using grpc source on {} (token: {})",
-            grpc_addr,
-            grpc_x_token.is_some()
-        );
-        let _jh =
-            stream_accounts_from_yellowstone_grpc(grpc_addr, grpc_x_token, token_storage.clone());
+    match (quic_url, grpc_addr) {
+        (Some(quic_url), None) => {
+            info!("Using quic source on {}", quic_url);
+            stream_accounts_from_quic_geyser_plugin(quic_url, token_storage.clone());
+        }
+        (None, Some(grpc_addr)) => {
+            info!(
+                "Using GRPC source on {} (token: {})",
+                grpc_addr,
+                grpc_x_token.is_some()
+            );
+            let _jh = stream_accounts_from_yellowstone_grpc(
+                grpc_addr,
+                grpc_x_token,
+                token_storage.clone(),
+            );
+        }
+        _ => unreachable!(),
     }
 
     let rpc_server = RpcServerImpl::new(token_storage.clone(), Some(token_storage));
-    RpcServerImpl::start_serving(rpc_server, 10700)
+    let rpc_server_handle = rpc_server
+        .start_serving(rpc_bind_addr.as_str())
         .await
         .unwrap();
+    serve_metrics(prometheus_bind_addr.as_deref());
+
+    rpc_server_handle.stopped().await;
+    log::error!("RPC HTTP server stopped");
+}
+
+fn serve_metrics(address: Option<&str>) {
+    if let Some(address) = address {
+        let prometheus_bind_addr =
+            SocketAddr::from_str(address).expect("Invalid Prometheus Exporter bind address");
+        prometheus_exporter::start(prometheus_bind_addr).expect("Prometheus Exporter failed");
+    } else {
+        info!("Prometheus Exporter disabled");
+    }
 }
 
 fn stream_accounts_from_quic_geyser_plugin(

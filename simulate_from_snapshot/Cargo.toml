@@ -15,7 +15,7 @@ path = "src/main_tokenstorage.rs"
 lite-account-manager-common = { workspace = true }
 lite-account-storage = { workspace = true }
 lite-token-account-storage = { workspace = true }
-lite-accounts-from-snapshot = { workspace = true}
+lite-accounts-from-snapshot = { workspace = true }
 
 yellowstone-grpc-proto = { workspace = true }
 geyser-grpc-connector = { workspace = true }
@@ -23,33 +23,33 @@ geyser-grpc-connector = { workspace = true }
 quic-geyser-client = { git = "https://github.com/blockworks-foundation/quic_geyser_plugin.git", tag = "v0.1.6_solana+2.0.15" }
 quic-geyser-common = { git = "https://github.com/blockworks-foundation/quic_geyser_plugin.git", tag = "v0.1.6_solana+2.0.15" }
 
-solana-sdk = {workspace = true}
-solana-client = {workspace = true}
-solana-runtime = {workspace = true}
+solana-sdk = { workspace = true }
+solana-client = { workspace = true }
+solana-runtime = { workspace = true }
 solana-rpc-client-api = { workspace = true }
 solana-account-decoder = { workspace = true }
-spl-token = {workspace = true}
-spl-token-2022 = {workspace = true}
+spl-token = { workspace = true }
+spl-token-2022 = { workspace = true }
 
 itertools = { workspace = true }
 futures = { workspace = true }
-lazy_static = {workspace = true}
-prometheus = {workspace = true}
-log = {workspace = true}
-bincode = {workspace = true}
+lazy_static = { workspace = true }
+prometheus = { workspace = true }
+log = { workspace = true }
+bincode = { workspace = true }
 serde = { workspace = true }
 anyhow = { workspace = true }
 
-tracing-subscriber = "0.3.19"
-clap = { version = "4.5.4", features = ["derive"] }
-thiserror = "1.0.31"
-tar = "0.4.38"
-tokio = { version = "1.38.0", features = ["rt-multi-thread", "macros"]}
-zstd = "0.13.2"
 async-trait = "0.1.73"
-env_logger = "0.9.0"
 base64 = "0.21.0"
+clap = { version = "4.5.4", features = ["derive"] }
+env_logger = "0.9.0"
 jsonrpsee = { version = "0.20.0", features = ["macros", "full"] }
+prometheus_exporter = { version = "^0.8.5" }
+tar = "0.4.38"
+thiserror = "1.0.31"
+tokio = { version = "1.38.0", features = ["rt-multi-thread", "macros"] }
 tower = "0.4.13"
 tower-http = { version = "0.4.0", features = ["full"] }
-
+tracing-subscriber = "0.3.19"
+zstd = "0.13.2"
