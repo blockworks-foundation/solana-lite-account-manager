@@ -65,8 +65,12 @@ pub async fn bench_get_account_info_request(
                 let decoded_data = base64.decode(data).with_context(|| {
                     format!("Couldn't decode base64 data for pubkey {}", account_pk)
                 })?;
-                Account::unpack(&decoded_data)
-                    .expect("returned account should be a valid token account");
+                Account::unpack(&decoded_data).with_context(|| {
+                    format!(
+                        "Couldn't unpack token account data for account_pk={}",
+                        account_pk
+                    )
+                })?;
                 debug!(
                     "successfully deserialized account data for account_pk={}",
                     account_pk
@@ -74,14 +78,14 @@ pub async fn bench_get_account_info_request(
             }
             UiAccountData::Binary(_data, encoding) => {
                 bail!(
-                    "Unexpected account data encoding for pubkey: encoding={:?}, pubkey={}",
+                    "Unexpected binary account data encoding for pubkey: encoding={:?}, account_pk={}",
                     encoding,
                     account_pk
                 );
             }
             UiAccountData::Json(_) => {
                 bail!(
-                    "Unexpected account data encoding for pubkey: encoding=Json, pubkey={}",
+                    "Unexpected account data encoding for pubkey: encoding=Json, account_pk={}",
                     account_pk
                 );
             }
