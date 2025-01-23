@@ -8,17 +8,18 @@ name = "load-tester"
 path = "src/main.rs"
 
 [dependencies]
-# solana-rpc-client-api = { workspace = true }
-# solana-rpc-client = { workspace = true }
+solana-account-decoder = { workspace = true }
+solana-rpc-client-api = { workspace = true }
+spl-token-2022 = { workspace = true }
 
 anyhow = { workspace = true }
 async-trait = "^0.1"
+base64 = { workspace = true }
 clap = { version = "^4.5.4", features = ["derive"] }
 env_logger = "^0.11.6"
 log = { workspace = true }
 rand = "^0.8.5"
 reqwest = { version = "^0.12.9", features = [
-    "blocking",
     "brotli",
     "deflate",
     "gzip",
