@@ -3015,6 +3015,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "base64 0.21.7",
  "clap 4.5.24",
  "env_logger 0.11.6",
  "log",
@@ -3023,6 +3024,9 @@ dependencies = [
  "rlt",
  "serde",
  "serde_json",
+ "solana-account-decoder",
+ "solana-rpc-client-api",
+ "spl-token-2022 5.0.2",
  "tokio",
 ]
 
