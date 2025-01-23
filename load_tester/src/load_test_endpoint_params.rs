@@ -10,9 +10,12 @@ pub enum LoadTestEndpointParams {
 impl LoadTestEndpointParams {
     pub fn get_params_from_cli_args(cli_args: &LoadTesterCli) -> LoadTestEndpointParams {
         match &cli_args.load_test_request {
-            LoadTestRequestCommand::GetAccountInfoArgs { pk, input_file } => {
-                let pks = match (pk, input_file) {
-                    (Some(pk), None) => vec![pk.clone()],
+            LoadTestRequestCommand::GetAccountInfoArgs {
+                account_pk,
+                input_file,
+            } => {
+                let account_pks = match (account_pk, input_file) {
+                    (Some(account_pk), None) => vec![account_pk.clone()],
                     (None, Some(input_file)) => read_to_string(input_file)
                         .unwrap_or_else(|e| {
                             panic!("failed to read file: file={}, error={}", input_file, e)
@@ -23,7 +26,7 @@ impl LoadTestEndpointParams {
                         .collect(),
                     _ => unreachable!(),
                 };
-                LoadTestEndpointParams::GetAccountInfo(pks)
+                LoadTestEndpointParams::GetAccountInfo(account_pks)
             }
         }
     }

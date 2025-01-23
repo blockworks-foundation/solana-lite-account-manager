@@ -3,8 +3,8 @@ use reqwest::Url;
 
 #[derive(Parser, Clone)]
 pub struct LoadTesterCli {
-    /// Target URL
-    pub url: Url,
+    /// Target RPC server URL
+    pub rpc_url: Url,
 
     #[command(subcommand)]
     pub load_test_request: LoadTestRequestCommand,
@@ -19,11 +19,11 @@ pub enum LoadTestRequestCommand {
     #[command(name = "get-account-info")]
     #[group(id = "get-account-info", required = true, multiple = false)]
     GetAccountInfoArgs {
-        /// the public key of the account
+        /// The public key of the account
         #[arg(short, long)]
-        pk: Option<String>,
+        account_pk: Option<String>,
 
-        /// the file to read the public keys from
+        /// The file to read the public keys from
         #[arg(short, long)]
         input_file: Option<String>,
     },

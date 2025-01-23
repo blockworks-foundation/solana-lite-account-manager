@@ -3,7 +3,6 @@ use async_trait::async_trait;
 use clap::Parser;
 use cli::LoadTesterCli;
 use load_test_endpoint_params::LoadTestEndpointParams;
-use log::debug;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use requests::bench_get_account_info_request;
 use reqwest::Client;
@@ -52,31 +51,29 @@ impl BenchSuite for LoadTester {
     }
 
     async fn bench(&mut self, state: &mut Self::WorkerState, _: &IterInfo) -> Result<IterReport> {
-        let t = Instant::now();
+        let started_at = Instant::now();
 
-        let response = match &self.load_test_endpoint_params {
-            LoadTestEndpointParams::GetAccountInfo(pks) => {
-                let index = state.prng.gen::<usize>() % pks.len();
-                let pk = pks[index].as_str();
+        let (response_status, response_length) = match &self.load_test_endpoint_params {
+            LoadTestEndpointParams::GetAccountInfo(account_pks) => {
+                let index = state.prng.gen::<usize>() % account_pks.len();
+                let account_pk = account_pks[index].as_str();
 
-                debug!("getAccountInfo request for pk={}", pk);
-                bench_get_account_info_request(&state.client, &self.cli_opts.url, pk).await?
+                bench_get_account_info_request(&state.client, &self.cli_opts.rpc_url, account_pk)
+                    .await?
             }
         };
 
-        let status = response.status().into();
-        let bytes = response.bytes().await?.len() as u64;
-        let duration = t.elapsed();
+        let duration = started_at.elapsed();
         Ok(IterReport {
             duration,
-            status,
-            bytes,
+            status: response_status.into(),
+            bytes: response_length as u64,
             items: 1,
         })
     }
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
