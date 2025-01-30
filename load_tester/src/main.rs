@@ -56,10 +56,13 @@ impl BenchSuite for LoadTester {
         let (response_status, response_length) = match &self.load_test_endpoint_params {
             LoadTestEndpointParams::GetAccountInfo(account_pks) => {
                 let index = state.prng.gen::<usize>() % account_pks.len();
-                let account_pk = account_pks[index].as_str();
 
-                bench_get_account_info_request(&state.client, &self.cli_opts.rpc_url, account_pk)
-                    .await?
+                bench_get_account_info_request(
+                    &state.client,
+                    &self.cli_opts.rpc_url,
+                    &account_pks[index],
+                )
+                .await?
             }
         };
 
