@@ -72,15 +72,11 @@ impl AccountStorageInterface for StorageByProgramId {
         }
     }
 
-    fn process_slot_data(&self, slot_info: SlotInfo, commitment: Commitment) -> Vec<AccountData> {
-        let mut return_vec = vec![];
+    fn process_slot_data(&self, slot_info: SlotInfo, commitment: Commitment) {
         for (_, interface) in self.program_id_dispatch_map.iter() {
-            let mut t = interface.process_slot_data(slot_info, commitment);
-            return_vec.append(&mut t);
+            interface.process_slot_data(slot_info, commitment);
         }
-        let mut t = self.default.process_slot_data(slot_info, commitment);
-        return_vec.append(&mut t);
-        return_vec
+        self.default.process_slot_data(slot_info, commitment);
     }
 
     // snapshot should always be created at finalized slot
