@@ -96,13 +96,13 @@ impl InmemoryAccountStore {
                     }
                 }
 
-                // account is deleted or if new does not satisfies the filter criterias
+                // account is deleted or if new does not satisfies the filter criteria
                 if Self::is_deleted(new_account_data) || !self.satisfies_filters(new_account_data) {
                     return true;
                 }
             }
             if !Self::is_deleted(new_account_data) && self.satisfies_filters(new_account_data) {
-                // update owner if account was not deleted but owner was change and the filter criterias are satisfied
+                // update owner if account was not deleted but owner was change and the filter criteria are satisfied
                 self.add_account_owner(account_index, new_account_data.account.owner);
             }
         }
@@ -208,7 +208,7 @@ impl AccountStorageInterface for InmemoryAccountStore {
     fn update_account(&self, account_data: AccountData, commitment: Commitment) -> bool {
         SLOT_FOR_LATEST_ACCOUNT_UPDATE.set(account_data.updated_slot as i64);
 
-        // account is neither deleted, nor tracked, not satifying any filters
+        // account is neither deleted, nor tracked, not satisfying any filters
         if !Self::is_deleted(&account_data)
             && !self.satisfies_filters(&account_data)
             && !self.account_store_contains_key(&account_data.pubkey)
@@ -350,7 +350,7 @@ impl AccountStorageInterface for InmemoryAccountStore {
         Ok(return_vec)
     }
 
-    fn process_slot_data(&self, slot_info: SlotInfo, commitment: Commitment) -> Vec<AccountData> {
+    fn process_slot_data(&self, slot_info: SlotInfo, commitment: Commitment) {
         let slot: u64 = slot_info.slot;
         let writable_accounts = {
             let mut lk = self.slots_status.lock().unwrap();
@@ -428,34 +428,27 @@ impl AccountStorageInterface for InmemoryAccountStore {
             writable_accounts
         };
 
-        let mut updated_accounts = vec![];
-
         let lk = self.accounts_store.read().unwrap();
         for (writable_account_index, update_slot) in writable_accounts {
             let mut writable_lk = lk[writable_account_index].write().unwrap();
-            if let Some((account_data, prev_account_data)) =
+            if let Some((account_data, Some(prev_account_data))) =
                 writable_lk.promote_slot_commitment(update_slot, commitment)
             {
-                if let Some(prev_account_data) = prev_account_data {
-                    // check if owner has changed
-                    if (prev_account_data.account.owner != account_data.account.owner
-                        || account_data.account.lamports == 0)
-                        && self.update_owner_delete_if_necessary(
-                            &prev_account_data,
-                            &account_data,
-                            writable_account_index,
-                            commitment,
-                        )
-                    {
-                        self.pubkey_to_account_index.remove(&account_data.pubkey);
-                        writable_lk.delete();
-                    }
+                // check if owner has changed
+                if (prev_account_data.account.owner != account_data.account.owner
+                    || account_data.account.lamports == 0)
+                    && self.update_owner_delete_if_necessary(
+                        &prev_account_data,
+                        &account_data,
+                        writable_account_index,
+                        commitment,
+                    )
+                {
+                    self.pubkey_to_account_index.remove(&account_data.pubkey);
+                    writable_lk.delete();
                 }
-                // account has been confirmed first time
-                updated_accounts.push(account_data);
             }
         }
-        updated_accounts
     }
 
     fn create_snapshot(&self, program_id: Pubkey) -> Result<Vec<u8>, AccountLoadingError> {
@@ -1173,16 +1166,20 @@ mod tests {
         let pk1 = Pubkey::new_unique();
 
         // setting random account as finalized at slot 0
-        let account_data_0 = create_random_account(&mut rng, 0, pk1, program);
-        store.initialize_or_update_account(account_data_0.clone());
+        let account_data_slot_0 = create_random_account(&mut rng, 0, pk1, program);
+        store.initialize_or_update_account(account_data_slot_0.clone());
 
         assert_eq!(
             store.get_account(pk1, Commitment::Processed),
-            Ok(Some(account_data_0.clone()))
+            Ok(Some(account_data_slot_0.clone()))
         );
         assert_eq!(
             store.get_account(pk1, Commitment::Confirmed),
-            Ok(Some(account_data_0.clone()))
+            Ok(Some(account_data_slot_0.clone()))
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Finalized),
+            Ok(Some(account_data_slot_0.clone()))
         );
 
         // updating state for processed at slot 3
@@ -1194,7 +1191,11 @@ mod tests {
         );
         assert_eq!(
             store.get_account(pk1, Commitment::Confirmed),
-            Ok(Some(account_data_0.clone()))
+            Ok(Some(account_data_slot_0.clone()))
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Finalized),
+            Ok(Some(account_data_slot_0.clone()))
         );
 
         // updating state for processed at slot 2
@@ -1206,12 +1207,15 @@ mod tests {
         );
         assert_eq!(
             store.get_account(pk1, Commitment::Confirmed),
-            Ok(Some(account_data_0.clone()))
+            Ok(Some(account_data_slot_0.clone()))
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Finalized),
+            Ok(Some(account_data_slot_0.clone()))
         );
 
         // confirming slot 2
-        let updates = store.process_slot_data(new_slot_info(2), Commitment::Confirmed);
-        assert_eq!(updates, vec![account_data_slot_2.clone()]);
+        store.process_slot_data(new_slot_info(2), Commitment::Confirmed);
         assert_eq!(
             store.get_account(pk1, Commitment::Processed),
             Ok(Some(account_data_slot_3.clone()))
@@ -1222,10 +1226,10 @@ mod tests {
         );
         assert_eq!(
             store.get_account(pk1, Commitment::Finalized),
-            Ok(Some(account_data_0.clone()))
+            Ok(Some(account_data_slot_0.clone()))
         );
 
-        // confirming random state at slot 1 / does not do anything as slot 2 has already been confrimed
+        // confirming random state at slot 1 / does not do anything as slot 2 has already been confirmed
         let account_data_slot_1 = create_random_account(&mut rng, 1, pk1, program);
         store.update_account(account_data_slot_1.clone(), Commitment::Confirmed);
         assert_eq!(
@@ -1238,12 +1242,11 @@ mod tests {
         );
         assert_eq!(
             store.get_account(pk1, Commitment::Finalized),
-            Ok(Some(account_data_0.clone()))
+            Ok(Some(account_data_slot_0.clone()))
         );
 
         // making slot 3 finalized
-        let updates = store.process_slot_data(new_slot_info(3), Commitment::Finalized);
-        assert_eq!(updates, vec![account_data_slot_3.clone()]);
+        store.process_slot_data(new_slot_info(3), Commitment::Finalized);
         assert_eq!(
             store.get_account(pk1, Commitment::Processed),
             Ok(Some(account_data_slot_3.clone()))
@@ -1258,8 +1261,7 @@ mod tests {
         );
 
         // making slot 2 finalized
-        let updates = store.process_slot_data(new_slot_info(2), Commitment::Finalized);
-        assert!(updates.is_empty());
+        store.process_slot_data(new_slot_info(2), Commitment::Finalized);
         assert_eq!(
             store.get_account(pk1, Commitment::Processed),
             Ok(Some(account_data_slot_3.clone()))
@@ -2147,46 +2149,50 @@ mod tests {
         let mut rng = rand::thread_rng();
         let pk1 = Pubkey::new_unique();
 
-        // add and test account
-        let account_1 = create_random_account_with_write_version(&mut rng, 1, pk1, program_1, 1);
-        store.initialize_or_update_account(account_1.clone());
+        // add account 1 for slot 1
+        let account_1_slot_1_version_1 =
+            create_random_account_with_write_version(&mut rng, 1, pk1, program_1, 1);
+        store.initialize_or_update_account(account_1_slot_1_version_1.clone());
         assert_eq!(
             store.get_account(pk1, Commitment::Processed).unwrap(),
-            Some(account_1.clone())
+            Some(account_1_slot_1_version_1.clone())
         );
         assert_eq!(
             store.get_account(pk1, Commitment::Confirmed).unwrap(),
-            Some(account_1.clone())
+            Some(account_1_slot_1_version_1.clone())
         );
         assert_eq!(
             store.get_account(pk1, Commitment::Finalized).unwrap(),
-            Some(account_1.clone())
+            Some(account_1_slot_1_version_1.clone())
         );
 
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Processed)
                 .unwrap(),
-            vec![account_1.clone()]
+            vec![account_1_slot_1_version_1.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Confirmed)
                 .unwrap(),
-            vec![account_1.clone()]
+            vec![account_1_slot_1_version_1.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Finalized)
                 .unwrap(),
-            vec![account_1.clone()]
+            vec![account_1_slot_1_version_1.clone()]
         );
 
-        // delete account 1
+        // update account 1 in slot 2 (processed)
         let pk2 = Pubkey::new_unique();
-        let account_1_2 = create_random_account_with_write_version(&mut rng, 2, pk1, program_1, 2);
-        store.update_account(account_1_2, Commitment::Processed);
-        let account_1_3 = AccountData {
+        let account_1_slot_2_version_2 =
+            create_random_account_with_write_version(&mut rng, 2, pk1, program_1, 2);
+        store.update_account(account_1_slot_2_version_2, Commitment::Processed);
+
+        // delete account 1 and a random other account in slot 2 (processed)
+        let deleted_account_1_slot_2_version_3 = AccountData {
             pubkey: pk1,
             account: Arc::new(Account {
                 lamports: 0,
@@ -2210,17 +2216,20 @@ mod tests {
             updated_slot: 2,
             write_version: 4,
         };
-        store.update_account(account_1_3.clone(), Commitment::Processed);
+        store.update_account(
+            deleted_account_1_slot_2_version_3.clone(),
+            Commitment::Processed,
+        );
         store.update_account(random_deletion.clone(), Commitment::Processed);
 
         assert_eq!(store.get_account(pk1, Commitment::Processed).unwrap(), None);
         assert_eq!(
             store.get_account(pk1, Commitment::Confirmed).unwrap(),
-            Some(account_1.clone())
+            Some(account_1_slot_1_version_1.clone())
         );
         assert_eq!(
             store.get_account(pk1, Commitment::Finalized).unwrap(),
-            Some(account_1.clone())
+            Some(account_1_slot_1_version_1.clone())
         );
         assert_eq!(store.get_account(pk2, Commitment::Processed).unwrap(), None);
         assert_eq!(store.get_account(pk2, Commitment::Confirmed).unwrap(), None);
@@ -2236,23 +2245,22 @@ mod tests {
             store
                 .get_program_accounts(program_1, None, Commitment::Confirmed)
                 .unwrap(),
-            vec![account_1.clone()]
+            vec![account_1_slot_1_version_1.clone()]
         );
         assert_eq!(
             store
                 .get_program_accounts(program_1, None, Commitment::Finalized)
                 .unwrap(),
-            vec![account_1.clone()]
+            vec![account_1_slot_1_version_1.clone()]
         );
 
-        let updated = store.process_slot_data(new_slot_info(2), Commitment::Confirmed);
-        assert_eq!(updated, vec![account_1_3.clone()]);
-
+        // update state to confirmed in slot 2
+        store.process_slot_data(new_slot_info(2), Commitment::Confirmed);
         assert_eq!(store.get_account(pk1, Commitment::Processed).unwrap(), None);
         assert_eq!(store.get_account(pk1, Commitment::Confirmed).unwrap(), None);
         assert_eq!(
             store.get_account(pk1, Commitment::Finalized).unwrap(),
-            Some(account_1.clone())
+            Some(account_1_slot_1_version_1.clone())
         );
         assert_eq!(store.get_account(pk2, Commitment::Processed).unwrap(), None);
         assert_eq!(store.get_account(pk2, Commitment::Confirmed).unwrap(), None);
@@ -2274,12 +2282,11 @@ mod tests {
             store
                 .get_program_accounts(program_1, None, Commitment::Finalized)
                 .unwrap(),
-            vec![account_1.clone()]
+            vec![account_1_slot_1_version_1.clone()]
         );
 
-        let updated = store.process_slot_data(new_slot_info(2), Commitment::Finalized);
-        assert_eq!(updated, vec![account_1_3]);
-
+        // update state to finalized in slot 2
+        store.process_slot_data(new_slot_info(2), Commitment::Finalized);
         assert_eq!(store.get_account(pk1, Commitment::Processed).unwrap(), None);
         assert_eq!(store.get_account(pk1, Commitment::Confirmed).unwrap(), None);
         assert_eq!(store.get_account(pk1, Commitment::Finalized).unwrap(), None);
